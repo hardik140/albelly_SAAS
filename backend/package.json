@@ -1,0 +1,14 @@
+{
+  "name": "stitch-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Stitch ERP & Manufacturing Dashboard",
+  "main": "server.js",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "pg": "^8.21.0",
+    "sqlite3": "^5.1.7",
+    "ws": "^8.17.0"
+  }
+}

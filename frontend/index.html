@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stitch - Ice Cream ERP & Manufacturing SaaS Dashboard</title>
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Supabase CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dark-mode">
+  <!-- Supabase Login Overlay -->
+  <div id="auth-container" class="auth-overlay">
+    <div class="auth-card card-glass">
+      <div class="brand" style="margin-bottom: 20px; text-align: center; font-size: 22px; justify-content: center; display: flex; gap: 8px;">
+        <span class="logo-icon">❄️</span>
+        <span class="logo-text" style="font-size: 20px; font-weight: 800; letter-spacing: 1px;">STITCH <span class="badge-tag">ERP</span></span>
+      </div>
+      
+      <h2 id="auth-title" style="text-align: center; margin-bottom: 8px; font-size: 18px; font-weight: 700;">Access Secure Workspace</h2>
+      <p id="auth-subtitle" style="text-align: center; color: var(--text-secondary); font-size: 12px; margin-bottom: 20px;">Please authenticate to access the manufacturing floor and ledger</p>
+      
+      <!-- Error Message Area -->
+      <div id="auth-error" class="alert-amber" style="display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 6px; font-size: 12px; border: 1px solid var(--border-card); background: rgba(217, 119, 6, 0.15); color: #f59e0b;"></div>
+      
+      <form id="auth-form">
+        <!-- Full Name for signup -->
+        <div class="form-group" id="group-fullname" style="display: none;">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Full Name:</label>
+          <input type="text" id="auth-fullname" class="form-control" placeholder="e.g. Satish Patil" style="margin-top: 4px; margin-bottom: 12px;">
+        </div>
+        
+        <div class="form-group">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Business Email:</label>
+          <input type="email" id="auth-email" class="form-control" placeholder="name@stitch-erp.com" style="margin-top: 4px; margin-bottom: 12px;" required>
+        </div>
+        
+        <div class="form-group">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Password:</label>
+          <input type="password" id="auth-password" class="form-control" placeholder="••••••••" style="margin-top: 4px; margin-bottom: 12px;" required>
+        </div>
+        
+        <!-- Role selection for signup -->
+        <div class="form-group" id="group-role" style="display: none;">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Workspace Authorization Role:</label>
+          <select id="auth-role" class="form-control" style="margin-top: 4px; margin-bottom: 12px; width: 100%;">
+            <option value="ADMIN">Admin / Owner (Full Access)</option>
+            <option value="INVENTORY_MANAGER">Inventory Manager</option>
+            <option value="PRODUCTION_SUPERVISOR">Production Supervisor</option>
+            <option value="SALES_AGENT">Sales & Dispatch Agent</option>
+          </select>
+        </div>
+        
+        <button type="submit" class="btn btn-primary" id="btn-auth-submit" style="width: 100%; padding: 10px; margin-top: 12px; font-weight: 600; font-size: 13px;">Sign In</button>
+      </form>
+      
+      <div style="text-align: center; margin-top: 16px; font-size: 12px;">
+        <span id="auth-toggle-text">Don't have an account?</span>
+        <a href="#" id="auth-toggle-btn" style="color: var(--soft-blue); font-weight: 600; text-decoration: none; margin-left: 4px;">Request Access</a>
+      </div>
+      
+      <div style="text-align: center; margin-top: 24px; font-size: 10px; color: var(--text-muted);">
+        Secure Cloud Connection &bull; Supabase Project
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo-icon">❄️</span>
+        <span class="logo-text">STITCH <span class="badge-tag">ERP</span></span>
+      </div>
+      
+      <nav class="nav-links">
+        <button class="nav-btn active" data-screen="factory-floor">
+          <span class="btn-icon">🏭</span> Live Factory Floor
+        </button>
+        <button class="nav-btn" data-screen="sales-desk">
+          <span class="btn-icon">💰</span> Sales & Billing POS
+        </button>
+        <button class="nav-btn" data-screen="inventory-matrix">
+          <span class="btn-icon">📦</span> Expiry & Traceability
+        </button>
+        <button class="nav-btn" id="nav-financial-full-year" data-screen="financial-full-year">
+          <span class="btn-icon">📊</span> Full Year Financials
+        </button>
+        <button class="nav-btn" id="nav-monthly-dashboard" data-screen="monthly-dashboard">
+          <span class="btn-icon">📅</span> Monthly Operations
+        </button>
+        <button class="nav-btn" id="nav-raw-materials" data-screen="raw-materials">
+          <span class="btn-icon">🥛</span> Raw Material Stock
+        </button>
+        <button class="nav-btn" id="nav-cold-room" data-screen="cold-room">
+          <span class="btn-icon">❄️</span> Cold Room Stock
+        </button>
+        <button class="nav-btn" id="nav-audits" data-screen="audit-logs">
+          <span class="btn-icon">📜</span> System Audit Logs
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <!-- Authenticated user info block -->
+        <div id="auth-user-info" style="display: none; padding: 12px; margin-bottom: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-card);">
+          <div style="font-size: 10px; color: var(--text-secondary);">LOGGED IN USER:</div>
+          <div id="auth-user-email" style="font-weight: 600; font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary);">user@stitch-erp.com</div>
+          <button class="btn btn-secondary" id="btn-auth-logout" style="width: 100%; margin-top: 8px; font-size: 10px; padding: 4px 8px; height: auto; border: 1px solid var(--border-card); background: rgba(255,255,255,0.03);">Logout Securely</button>
+        </div>
+        
+        <div class="role-selector-container" id="role-select-box">
+          <label for="role-select">Active Role:</label>
+          <select id="role-select" class="role-dropdown">
+            <option value="ADMIN">Admin / Owner (Full Access)</option>
+            <option value="INVENTORY_MANAGER">Inventory Manager</option>
+            <option value="PRODUCTION_SUPERVISOR">Production Supervisor</option>
+            <option value="SALES_AGENT">Sales & Dispatch Agent</option>
+          </select>
+        </div>
+        <div class="role-selector-container" id="gst-setting-container" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-card);">
+          <label for="gst-rate-input">GST Configuration (%):</label>
+          <div style="display: flex; gap: 8px; margin-top: 4px;">
+            <input type="number" id="gst-rate-input" class="role-dropdown" style="width: 80px; padding: 4px 8px; font-weight: 600;" step="0.5" min="0" max="100" value="18">
+            <button class="btn btn-secondary action-dot-btn" id="btn-update-gst" style="flex: 1; padding: 4px 8px; font-size: 11px;">Update</button>
+          </div>
+        </div>
+        <div class="connection-status">
+          <span class="status-dot online"></span> Websocket Online
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN BODY -->
+    <main class="main-content">
+      <!-- HEADER -->
+      <header class="top-header">
+        <div class="header-left">
+          <h1 id="screen-title">Live Factory Floor Dashboard</h1>
+          <p id="screen-subtitle" class="text-secondary">Real-time production monitoring and logistics tracker</p>
+        </div>
+        <div class="header-right">
+          <div class="theme-toggle-btn" id="theme-toggle">
+            <span class="theme-icon">☀️</span> Toggle Theme
+          </div>
+          <div class="user-profile">
+            <span class="avatar">👤</span>
+            <span id="user-display-name">System Admin</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- SCREEN A: LIVE FACTORY FLOOR -->
+      <section id="screen-factory-floor" class="screen-view active">
+        <!-- Metric Grid -->
+        <div class="metrics-grid">
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Active Batches</h3>
+              <span class="metric-icon">🍦</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="metric-active-batches">0</span>
+              <span class="metric-desc">In mixing or aging stages</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Raw Milk & Cream Levels</h3>
+              <span class="metric-icon">🥛</span>
+            </div>
+            <div class="metric-body gauge-body">
+              <div class="gauge-container">
+                <svg class="gauge-svg" viewBox="0 0 100 50">
+                  <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke-width="8"/>
+                  <path class="gauge-fill" id="dairy-gauge-fill" d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke-width="8" stroke-dasharray="125.6" stroke-dashoffset="30"/>
+                </svg>
+                <div class="gauge-text" id="dairy-level-text">0 L</div>
+              </div>
+              <span class="metric-desc">Aggregate fresh dairy stock</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Cold Room Stock</h3>
+              <span class="metric-icon">❄️</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="metric-cold-room">0 pcs</span>
+              <span class="metric-desc">Finished goods stock total</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Trucks at Gate</h3>
+              <span class="metric-icon">🚛</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="metric-gate-trucks">0</span>
+              <span class="metric-desc">Vehicles inside facility</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Factory Main Content (Split Screen) -->
+        <div class="factory-layout-split">
+          <!-- Production Pipeline (Kanban) -->
+          <div class="kanban-panel card-glass">
+            <div class="panel-header">
+              <h2>Production Lifecycle Pipeline</h2>
+              <button class="btn btn-primary" id="btn-start-batch-trigger">⚙️ Launch Production Batch</button>
+            </div>
+            <div class="kanban-board">
+              <!-- Mixing Column -->
+              <div class="kanban-column" id="col-mixing">
+                <div class="column-header">Mixing <span class="col-count" id="count-mixing">0</span></div>
+                <div class="kanban-cards" id="cards-mixing"></div>
+              </div>
+              <!-- Aging Column -->
+              <div class="kanban-column" id="col-aging">
+                <div class="column-header">Aging <span class="col-count" id="count-aging">0</span></div>
+                <div class="kanban-cards" id="cards-aging"></div>
+              </div>
+              <!-- Churning Column -->
+              <div class="kanban-column" id="col-churning">
+                <div class="column-header">Churning & Freezing <span class="col-count" id="count-churning">0</span></div>
+                <div class="kanban-cards" id="cards-churning"></div>
+              </div>
+              <!-- Hardening Column -->
+              <div class="kanban-column" id="col-hardening">
+                <div class="column-header">Hardening Room <span class="col-count" id="count-hardening">0</span></div>
+                <div class="kanban-cards" id="cards-hardening"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Gate Log (Logistics Manager) -->
+          <div class="gate-panel card-glass">
+            <div class="panel-header">
+              <h2>In-Out Logistics Gate Manager</h2>
+              <button class="btn btn-secondary" id="btn-checkin-trigger">➕ Register Vehicle</button>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Vehicle No</th>
+                    <th>Driver</th>
+                    <th>Purpose</th>
+                    <th>In-Gate</th>
+                    <th>Duration</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="gate-logs-table-body">
+                  <!-- Dynamic Gate Entries -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN B: INTERACTIVE SALES & BILLING DESK -->
+      <section id="screen-sales-desk" class="screen-view">
+        <!-- Tab buttons to switch booking vs tracking -->
+        <div class="pos-tab-bar" style="display: flex; gap: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--border-card); padding-bottom: 12px;">
+          <button class="filter-btn active" id="tab-pos-order-booking" style="font-weight:700; font-size:13px; padding: 10px 18px;">🛒 Book Distributor Order</button>
+          <button class="filter-btn" id="tab-pos-order-tracking" style="font-weight:700; font-size:13px; padding: 10px 18px;">🚛 Dispatch Queue & Track Status</button>
+        </div>
+
+        <!-- POS Booking Tab View -->
+        <div id="pos-booking-view" class="pos-tab-content">
+          <div class="sales-split-container">
+          <!-- Left 60% Flavor Grid -->
+          <div class="sales-catalog card-glass">
+            <div class="panel-header" style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
+              <h2>Interactive Product Catalog</h2>
+              <button class="btn btn-primary" id="btn-add-product-trigger">➕ Register New Product</button>
+            </div>
+            <div class="catalog-filters">
+              <input type="text" id="sales-search" placeholder="Search flavors, SKUs..." class="search-input">
+              <div class="filter-buttons">
+                <button class="filter-btn active" data-category="all">All Items</button>
+                <button class="filter-btn" data-category="Bricks">Bricks</button>
+                <button class="filter-btn" data-category="Cones">Cones</button>
+                <button class="filter-btn" data-category="Tubs">Tubs</button>
+              </div>
+            </div>
+            <div class="product-grid" id="product-grid-container">
+              <!-- Dynamic Product Cards -->
+            </div>
+          </div>
+
+          <!-- Right 40% Sticky Checkout -->
+          <aside class="checkout-panel card-glass">
+            <div class="checkout-header">
+              <h2>Sticky Checkout & Invoice</h2>
+              <span class="checkout-icon">🛒</span>
+            </div>
+            <div class="customer-info-section">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label for="customer-name-input" style="margin-bottom: 0;">Customer / Distributor Name:</label>
+                <button type="button" class="btn btn-secondary" id="btn-add-distributor-trigger" style="font-size: 11px; padding: 2px 8px; height: auto; line-height: 1.2; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-card);">➕ Add New</button>
+              </div>
+              <input type="text" id="customer-name-input" list="distributor-list" placeholder="ABC Distributors Ltd." required>
+              <datalist id="distributor-list"></datalist>
+            </div>
+            <div class="customer-info-section" style="margin-top: 8px;">
+              <label for="customer-location-input">Location / City:</label>
+              <input type="text" id="customer-location-input" placeholder="e.g. Bengaluru, KA">
+            </div>
+            <div class="cart-items-container" id="cart-items-list">
+              <div class="empty-cart-message">Your cart is empty. Click [Add +] on catalog cards to book items.</div>
+            </div>
+            <div class="pricing-summary">
+              <div class="price-row">
+                <span>Subtotal</span>
+                <span id="price-subtotal">₹0.00</span>
+              </div>
+              <div class="price-row">
+                <span>GST Tax (<span id="cart-gst-rate">18</span>%)</span>
+                <span id="price-tax">₹0.00</span>
+              </div>
+              <div class="price-row grand-total-row">
+                <span>Grand Total</span>
+                <span id="price-total">₹0.00</span>
+              </div>
+            </div>
+            <button class="btn btn-checkout-action" id="btn-generate-invoice" disabled>Generate Invoice & Queue Dispatch</button>
+          </aside>
+        </div>
+        </div>
+
+        <!-- POS Dispatch Tracking Tab View -->
+        <div id="pos-tracking-view" class="pos-tab-content" style="display: none;">
+          <div class="card-glass" style="min-height: 480px;">
+            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+              <h2>Active Dispatch Queue & Distributor Status Tracker</h2>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <label for="tracking-distributor-filter" style="font-size: 12px; color: var(--text-secondary);">Filter Distributor:</label>
+                <select id="tracking-distributor-filter" class="role-dropdown" style="background-color: var(--bg-secondary); padding: 6px 12px; font-size:12px;">
+                  <option value="">-- All Distributors --</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Order Code</th>
+                    <th>Date</th>
+                    <th>Distributor</th>
+                    <th>Items Purchased</th>
+                    <th>GST (Tax)</th>
+                    <th>Grand Total</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="pos-orders-table-body">
+                  <!-- Dynamic active orders tracking row list -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN C: EXPIRY & TRACEABILITY MATRIX -->
+      <section id="screen-inventory-matrix" class="screen-view">
+        <div class="matrix-layout-split">
+          <!-- Inventory Table -->
+          <div class="inventory-table-panel card-glass">
+            <div class="panel-header">
+              <h2>Perishable Materials Inventory (FEFO Alerts)</h2>
+              <button class="btn btn-primary" id="btn-add-inventory-trigger">➕ Add Raw Stock Batch</button>
+            </div>
+            <div class="matrix-warning-alert alert-amber">
+              ⚠️ <strong>First-Expired, First-Out (FEFO) Warning:</strong> Batch rows highlighted in <span style="color:var(--soft-amber); font-weight:bold;">Amber</span> represent perishable stock expiring in less than 3 days. They will be prioritized during production start.
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Material Name</th>
+                    <th>SKU</th>
+                    <th>Supplier Batch</th>
+                    <th>Received Qty</th>
+                    <th>Remaining Qty</th>
+                    <th>Expiry Date</th>
+                    <th>FEFO Status</th>
+                  </tr>
+                </thead>
+                <tbody id="inventory-matrix-table-body">
+                  <!-- Dynamic Raw Batch Entries -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Traceability Diagram Drawer -->
+          <div class="traceability-drawer-panel card-glass">
+            <div class="panel-header">
+              <h2>Finished Batch Traceability Link</h2>
+            </div>
+            <div class="traceability-search-box">
+              <label for="traceability-batch-select">Select Finished Production Batch:</label>
+              <select id="traceability-batch-select" class="dropdown-input">
+                <option value="">-- Choose Completed Batch --</option>
+              </select>
+            </div>
+            
+            <div class="trace-diagram-container" id="trace-diagram-canvas-container">
+              <!-- Visual tree canvas/svg rendering area -->
+              <div class="trace-placeholder">
+                <div class="placeholder-icon">🔍</div>
+                <p>Click on any completed production batch above or select from the dropdown to construct the ingredients traceability tree.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN D: SYSTEM AUDIT LOGS -->
+      <section id="screen-audit-logs" class="screen-view">
+        <div class="audit-logs-panel card-glass">
+          <div class="panel-header">
+            <h2>Immutable System Audit Ledger</h2>
+            <div class="ledger-indicator">🔒 Locked Relational Database Logs</div>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Role</th>
+                  <th>Operator</th>
+                  <th>Action</th>
+                  <th>Entity</th>
+                  <th>Change Set (Old &rarr; New Value)</th>
+                </tr>
+              </thead>
+              <tbody id="audit-logs-table-body">
+                <!-- Dynamic Logs -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN E: FULL YEAR FINANCIALS -->
+      <section id="screen-financial-full-year" class="screen-view">
+        <!-- Metric Grid -->
+        <div class="metrics-grid">
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Annual Revenue</h3>
+              <span class="metric-icon">💰</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="fin-annual-revenue">₹0.00</span>
+              <span class="metric-desc">Sales total over 12 months</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Estimated Net Profit</h3>
+              <span class="metric-icon">📈</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="fin-net-profit" style="color:var(--mint-green)">₹0.00</span>
+              <span class="metric-desc">Based on 35% margin model</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Taxes Collected (GST)</h3>
+              <span class="metric-icon">⚖️</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="fin-taxes">₹0.00</span>
+              <span class="metric-desc"><span id="fin-gst-rate">18</span>% GST standard on orders</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Total Orders Booked</h3>
+              <span class="metric-icon">📦</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="fin-total-orders">0</span>
+              <span class="metric-desc">Distributor invoices processed</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Financial Layout Split -->
+        <div class="factory-layout-split" style="grid-template-columns: 2fr 1fr;">
+          <!-- Sales chart panel -->
+          <div class="kanban-panel card-glass">
+            <div class="panel-header">
+              <h2>12-Month Financial Performance Trends</h2>
+            </div>
+            <div class="chart-container" style="position: relative; height:320px; width:100%;">
+              <canvas id="chart-annual-financials"></canvas>
+            </div>
+          </div>
+
+          <!-- Product Sales Doughnut panel -->
+          <div class="gate-panel card-glass">
+            <div class="panel-header">
+              <h2>Flavor Popularity Share</h2>
+            </div>
+            <div class="chart-container" style="position: relative; height:240px; width:100%; display:flex; justify-content:center; align-items:center;">
+              <canvas id="chart-annual-doughnut"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Best Sellers & Month table ledger -->
+        <div class="factory-layout-split">
+          <!-- Best Sellers Table -->
+          <div class="kanban-panel card-glass">
+            <div class="panel-header">
+              <h2>Top Performing Products (Best Sellers)</h2>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Product Flavor</th>
+                    <th>Units Sold</th>
+                    <th>Gross Revenue</th>
+                  </tr>
+                </thead>
+                <tbody id="fin-best-sellers-body">
+                  <!-- Dynamic Best Sellers -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Monthly Ledger table -->
+          <div class="gate-panel card-glass">
+            <div class="panel-header">
+              <h2>Month-by-Month Sales Ledger</h2>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Sales Vol</th>
+                    <th>Invoices</th>
+                  </tr>
+                </thead>
+                <tbody id="fin-monthly-ledger-body">
+                  <!-- Dynamic months list -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Distributor Sales Matrix section -->
+        <div class="factory-layout-split" style="margin-top: 24px;">
+          <!-- Distributor Sales performance chart -->
+          <div class="kanban-panel card-glass" style="min-height: 380px;">
+            <div class="panel-header">
+              <h2>Distributor Annual Sales Performance Chart</h2>
+            </div>
+            <div class="chart-container" style="position: relative; height:320px; width:100%;">
+              <canvas id="chart-distributor-annual"></canvas>
+            </div>
+          </div>
+
+          <!-- Distributor Matrix table ledger -->
+          <div class="gate-panel card-glass" style="min-height: 380px;">
+            <div class="panel-header">
+              <h2>Distributor Annual Sales Matrix Table</h2>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Distributor Name</th>
+                    <th>Orders Booked</th>
+                    <th>GST Paid</th>
+                    <th>Total Purchase Qty</th>
+                    <th>Total Sales (₹)</th>
+                  </tr>
+                </thead>
+                <tbody id="distributor-annual-matrix-body">
+                  <!-- Dynamic distributor annual performance logs -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN F: MONTHLY OPERATIONS DASHBOARD -->
+      <section id="screen-monthly-dashboard" class="screen-view">
+        <!-- Dashboard Filters & Title Row -->
+        <div class="card-glass" style="padding:16px; display:flex; justify-content:space-between; align-items:center; margin-bottom: 0px;">
+          <h2 style="font-size:15px; font-weight:700;">Select Billing & Operations Period:</h2>
+          <div style="display:flex; gap:10px;">
+            <select id="monthly-period-select" class="role-dropdown" style="background-color:var(--bg-secondary);">
+              <!-- Generated dynamically by app.js -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Metric Grid -->
+        <div class="metrics-grid">
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Monthly Sales Revenue</h3>
+              <span class="metric-icon">💵</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="op-monthly-sales">₹0.00</span>
+              <span class="metric-desc">Completed orders this month</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Batches Completed</h3>
+              <span class="metric-icon">🍦</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="op-monthly-batches">0</span>
+              <span class="metric-desc">Completed production batches</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Gate Traffic</h3>
+              <span class="metric-icon">🚛</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="op-monthly-traffic">0 vehicles</span>
+              <span class="metric-desc">Inbound/Outbound truck logs</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Volume Produced</h3>
+              <span class="metric-icon">📏</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="op-monthly-production">0 units</span>
+              <span class="metric-desc">Ice cream output in pcs</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Daily Production vs Sales Chart -->
+        <div class="factory-layout-split" style="grid-template-columns: 2fr 1fr;">
+          <div class="kanban-panel card-glass">
+            <div class="panel-header">
+              <h2>Daily Production (Pcs) vs Sales Revenue (₹)</h2>
+            </div>
+            <div class="chart-container" style="position: relative; height:320px; width:100%;">
+              <canvas id="chart-monthly-daily"></canvas>
+            </div>
+          </div>
+
+          <div class="gate-panel card-glass">
+            <div class="panel-header">
+              <h2>Production Recipe Share</h2>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Flavor Name</th>
+                    <th>Batches</th>
+                    <th>Volume</th>
+                  </tr>
+                </thead>
+                <tbody id="op-recipe-breakdown-body">
+                  <!-- Dynamic recipe logs -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Raw Materials Consumed this Month -->
+        <div class="card-glass">
+          <div class="panel-header">
+            <h2>Raw Material Consumption Log (FEFO Realized Deductions)</h2>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px;" id="op-materials-consumption-container">
+            <!-- Dynamic progress gauges representing consumed quantities -->
+          </div>
+        </div>
+
+        <!-- Monthly Distributor Matrix section -->
+        <div class="factory-layout-split" style="margin-top: 24px;">
+          <!-- Distributor monthly sales performance chart -->
+          <div class="kanban-panel card-glass" style="min-height: 380px;">
+            <div class="panel-header">
+              <h2>Distributor Monthly Purchase Shares</h2>
+            </div>
+            <div class="chart-container" style="position: relative; height:320px; width:100%; display:flex; justify-content:center; align-items:center;">
+              <canvas id="chart-distributor-monthly"></canvas>
+            </div>
+          </div>
+
+          <!-- Distributor monthly Matrix table ledger -->
+          <div class="gate-panel card-glass" style="min-height: 380px;">
+            <div class="panel-header">
+              <h2>Distributor Monthly Sales Matrix Table</h2>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Distributor Name</th>
+                    <th>Orders Booked</th>
+                    <th>Volume (Pcs)</th>
+                    <th>GST Tax Paid</th>
+                    <th>Monthly Purchases (₹)</th>
+                  </tr>
+                </thead>
+                <tbody id="distributor-monthly-matrix-body">
+                  <!-- Dynamic distributor monthly logs -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN G: RAW MATERIAL STOCK DASHBOARD -->
+      <section id="screen-raw-materials" class="screen-view">
+        <div class="metrics-grid">
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Total Dairy Stock</h3>
+              <span class="metric-icon">🥛</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="raw-total-dairy">0 L</span>
+              <span class="metric-desc">Raw Milk & Cream aggregate</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Sugar & Dry Goods</h3>
+              <span class="metric-icon">🍬</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="raw-total-dry">0 kg</span>
+              <span class="metric-desc">Sugar, Cocoa, & Stabilizers</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Low Stock Alerts</h3>
+              <span class="metric-icon" id="raw-alert-icon">✅</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="raw-low-stock-count">0 items</span>
+              <span class="metric-desc">Materials below safety threshold</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stock Cards Container -->
+        <div class="card-glass">
+          <div class="panel-header">
+            <h2>Raw Material Stock Meters & Quick Order</h2>
+            <button class="btn btn-primary" id="btn-add-material-trigger">➕ Register New Material</button>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:20px;" id="raw-material-meters-grid">
+            <!-- Dynamic material gauges with stock bars, safety targets and order buttons -->
+          </div>
+        </div>
+
+        <!-- Supplier Lots & Expiry Table -->
+        <div class="card-glass">
+          <div class="panel-header">
+            <h2>Supplier Batches Lot Ledger & Expiration Tracking</h2>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th>SKU</th>
+                  <th>Supplier Batch Lot</th>
+                  <th>Received Date</th>
+                  <th>Stock Remaining</th>
+                  <th>Expiry Date</th>
+                  <th>Status Warning</th>
+                </tr>
+              </thead>
+              <tbody id="raw-supplier-batches-body">
+                <!-- Dynamic supplier batches -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN H: COLD ROOM STOCK DASHBOARD -->
+      <section id="screen-cold-room" class="screen-view">
+        <div class="metrics-grid">
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Finished Goods Volume</h3>
+              <span class="metric-icon">❄️</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="cold-total-qty">0 pcs</span>
+              <span class="metric-desc">Finished goods stock total</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Asset Valuation</h3>
+              <span class="metric-icon">💰</span>
+            </div>
+            <div class="metric-body">
+              <span class="metric-value" id="cold-total-value">₹0.00</span>
+              <span class="metric-desc">Estimated value at retail pricing</span>
+            </div>
+          </div>
+          <div class="metric-card card-glass">
+            <div class="metric-header">
+              <h3>Cold Room Temperature</h3>
+              <span class="metric-icon">🌡️</span>
+            </div>
+            <div class="metric-body" style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <span class="metric-value" id="cold-room-temp">-20.4 °C</span>
+                <span class="metric-desc">Standard target: -22°C to -18°C</span>
+              </div>
+              <span class="badge badge-success" style="font-size:10px;">Optimal</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Split Screen finished goods + sensor chart -->
+        <div class="factory-layout-split" style="grid-template-columns: 3fr 2fr;">
+          <!-- Inventory Table -->
+          <div class="kanban-panel card-glass">
+            <div class="panel-header">
+              <h2>Cold Room Finished Goods Inventory Log</h2>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Flavor Item</th>
+                    <th>Unit Price</th>
+                    <th>Stock Qty</th>
+                    <th>Asset Value</th>
+                    <th>Alert Status</th>
+                  </tr>
+                </thead>
+                <tbody id="cold-finished-goods-body">
+                  <!-- Dynamic finished goods logs -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Temp Log Sensor Chart -->
+          <div class="gate-panel card-glass">
+            <div class="panel-header">
+              <h2>Cold Room Temp Sensor Log (Real-time Simulation)</h2>
+            </div>
+            <div class="chart-container" style="position: relative; height:300px; width:100%;">
+              <canvas id="chart-cold-room-temp"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Completed Batch Expiries -->
+        <div class="card-glass">
+          <div class="panel-header">
+            <h2>Completed Finished Batches Lot Expirations (90-Day Freshness)</h2>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Batch Code</th>
+                  <th>Flavor Item</th>
+                  <th>Qty Output</th>
+                  <th>Manufacture Date</th>
+                  <th>Expiry Date</th>
+                  <th>Freshness Rating</th>
+                </tr>
+              </thead>
+              <tbody id="cold-batches-expiry-body">
+                <!-- Dynamic completed production batches -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODALS -->
+
+  <!-- Modal A: Launch Production Batch -->
+  <div class="modal-overlay" id="modal-start-batch">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>⚙️ Launch Production Batch</h3>
+        <button class="modal-close" data-close="modal-start-batch">&times;</button>
+      </div>
+      <form id="start-batch-form">
+        <div class="form-group">
+          <label for="batch-recipe-select">Select Product Recipe:</label>
+          <select id="batch-recipe-select" class="form-control" required>
+            <!-- Loaded recipes dynamically -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="batch-code-input">Unique Batch Code:</label>
+          <input type="text" id="batch-code-input" class="form-control" placeholder="PB-26-004" required>
+        </div>
+        <div class="recipe-requirements-preview" id="recipe-preview-section">
+          <!-- Displays ingredients recipe requirements -->
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-close="modal-start-batch">Cancel</button>
+          <button type="submit" class="btn btn-primary">Start Mixing (Deduct Stock)</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal B: Register Vehicle Check-In -->
+  <div class="modal-overlay" id="modal-gate-checkin">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>🚛 Gate Register Vehicle Check-In</h3>
+        <button class="modal-close" data-close="modal-gate-checkin">&times;</button>
+      </div>
+      <form id="gate-checkin-form">
+        <div class="form-group">
+          <label for="vehicle-no-input">Vehicle Number Plate:</label>
+          <input type="text" id="vehicle-no-input" class="form-control" placeholder="MH-12-AB-1234" required>
+        </div>
+        <div class="form-group">
+          <label for="driver-name-input">Driver Full Name:</label>
+          <input type="text" id="driver-name-input" class="form-control" placeholder="Satish Patil" required>
+        </div>
+        <div class="form-group">
+          <label for="purpose-input">Purpose of Visit:</label>
+          <select id="purpose-input" class="form-control" required>
+            <option value="Raw Material Delivery (Dairy)">Raw Material Delivery (Dairy)</option>
+            <option value="Raw Material Delivery (Dry Goods)">Raw Material Delivery (Dry Goods)</option>
+            <option value="Sales Dispatch Pickup">Sales Dispatch Pickup</option>
+            <option value="Maintenance / Security">Maintenance / Security</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-close="modal-gate-checkin">Cancel</button>
+          <button type="submit" class="btn btn-primary">Log Gate In</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal C: Register Raw Materials Stock -->
+  <div class="modal-overlay" id="modal-add-inventory">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>➕ Add Perishable Raw Stock Batch</h3>
+        <button class="modal-close" data-close="modal-add-inventory">&times;</button>
+      </div>
+      <form id="add-inventory-form">
+        <div class="form-group">
+          <label for="inv-material-select">Select Raw Material:</label>
+          <select id="inv-material-select" class="form-control" required>
+            <!-- Dynamically populated from registered materials -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="inv-quantity-input">Quantity Received:</label>
+          <input type="number" id="inv-quantity-input" class="form-control" step="0.01" min="1" placeholder="100.00" required>
+        </div>
+        <div class="form-group">
+          <label for="inv-expiry-input">Expiry Date (FEFO Enforcement):</label>
+          <input type="date" id="inv-expiry-input" class="form-control" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-close="modal-add-inventory">Cancel</button>
+          <button type="submit" class="btn btn-primary">Receive Stock Batch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Register New Raw Material Type -->
+  <div class="modal-overlay" id="modal-add-new-material">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>➕ Register New Raw Material Type</h3>
+        <button class="modal-close" data-close="modal-add-new-material">&times;</button>
+      </div>
+      <form id="add-new-material-form">
+        <div class="form-group">
+          <label for="new-mat-name">Material Name:</label>
+          <input type="text" id="new-mat-name" class="form-control" placeholder="e.g. Mango Pulp" required>
+        </div>
+        <div class="form-group">
+          <label for="new-mat-sku">SKU Code (Unique):</label>
+          <input type="text" id="new-mat-sku" class="form-control" placeholder="e.g. RM-MANGO-07" required>
+        </div>
+        <div class="form-group">
+          <label for="new-mat-unit">Measurement Unit:</label>
+          <select id="new-mat-unit" class="form-control" required>
+            <option value="L">Litres (L)</option>
+            <option value="kg">Kilograms (kg)</option>
+            <option value="units">Units (pcs)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="new-mat-capacity">Max Warehouse Capacity:</label>
+          <input type="number" id="new-mat-capacity" class="form-control" step="0.1" min="1" placeholder="e.g. 500" required>
+        </div>
+        <div class="form-group">
+          <label for="new-mat-safety">Safety Stock Threshold:</label>
+          <input type="number" id="new-mat-safety" class="form-control" step="0.1" min="1" placeholder="e.g. 100" required>
+        </div>
+        <div class="form-group">
+          <label for="new-mat-initial-stock">Initial Stock Quantity:</label>
+          <input type="number" id="new-mat-initial-stock" class="form-control" step="0.1" min="0" placeholder="e.g. 0" required>
+        </div>
+        <div class="form-group">
+          <label for="new-mat-expiry">Initial Batch Expiry Date:</label>
+          <input type="date" id="new-mat-expiry" class="form-control" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-close="modal-add-new-material">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create & Register Material</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Register New Finished Good Product -->
+  <div class="modal-overlay" id="modal-add-product">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>➕ Register New Product Type</h3>
+        <button class="modal-close" data-close="modal-add-product">&times;</button>
+      </div>
+      <form id="add-product-form">
+        <div class="form-group">
+          <label for="new-prod-name">Product Name:</label>
+          <input type="text" id="new-prod-name" class="form-control" placeholder="e.g. Strawberry Tub 5L" required>
+        </div>
+        <div class="form-group">
+          <label for="new-prod-sku">SKU Code (Unique):</label>
+          <input type="text" id="new-prod-sku" class="form-control" placeholder="e.g. FG-STR-TUB" required>
+        </div>
+        <div class="form-group">
+          <label for="new-prod-price">Standard Unit Price (₹):</label>
+          <input type="number" id="new-prod-price" class="form-control" step="0.01" min="0.01" placeholder="e.g. 25.00" required>
+        </div>
+        <div class="form-group">
+          <label for="new-prod-stock">Initial Stock Quantity (pcs):</label>
+          <input type="number" id="new-prod-stock" class="form-control" min="0" placeholder="e.g. 50" required>
+        </div>
+        <div class="form-group">
+          <label for="new-prod-unit">Measurement Unit:</label>
+          <input type="text" id="new-prod-unit" class="form-control" placeholder="e.g. pcs" value="pcs" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-close="modal-add-product">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create & Register Product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal E: Register New Customer / Distributor -->
+  <div class="modal-overlay" id="modal-add-distributor">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>➕ Register New Customer / Distributor</h3>
+        <button class="modal-close" data-close="modal-add-distributor">&times;</button>
+      </div>
+      <form id="add-distributor-form">
+        <div class="form-group">
+          <label for="new-dist-name">Customer / Distributor Name:</label>
+          <input type="text" id="new-dist-name" class="form-control" placeholder="e.g. Metro Sweet House" required>
+        </div>
+        <div class="form-group">
+          <label for="new-dist-location">Location / City:</label>
+          <input type="text" id="new-dist-location" class="form-control" placeholder="e.g. Pune, MH" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-close="modal-add-distributor">Cancel</button>
+          <button type="submit" class="btn btn-primary">Register Customer / Distributor</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal D: Invoice/Receipt Viewer -->
+  <div class="modal-overlay" id="modal-invoice-viewer">
+    <div class="modal-box modal-box-large">
+      <div class="modal-header">
+        <h3>🧾 Customer Invoice & Dispatch Details</h3>
+        <button class="modal-close" data-close="modal-invoice-viewer">&times;</button>
+      </div>
+      <div class="invoice-iframe-container">
+        <iframe id="invoice-frame" src="about:blank"></iframe>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-close="modal-invoice-viewer">Close</button>
+        <button type="button" class="btn btn-primary" onclick="document.getElementById('invoice-frame').contentWindow.print();">🖨️ Print Invoice</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="app.js"></script>
+</body>
+</html>

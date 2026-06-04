@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+jspm_packages/
+web_modules/
+
+# Local databases & logs
+*.db
+*.log
+backend/stitch_erp.db
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+.env.staging
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Editor/Workspace configs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
