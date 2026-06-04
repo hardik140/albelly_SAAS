@@ -7,18 +7,15 @@ console.log("==========================================");
 
 const dbUrl = process.env.DATABASE_URL;
 const anonKey = process.env.SUPABASE_ANON_KEY;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 console.log(`Supabase URL: ${process.env.SUPABASE_URL || 'Not Set'}`);
-console.log(`Anon Public Key: ${anonKey ? (anonKey.includes('placeholder') ? 'Placeholder' : 'Configured') : 'Not Set'}`);
-console.log(`Service Role Key: ${serviceKey ? (serviceKey.includes('placeholder') ? 'Placeholder' : 'Configured') : 'Not Set'}`);
-console.log(`Database Connection String: ${dbUrl ? (dbUrl.includes('YOUR_PASSWORD_HERE') ? 'Placeholder (needs password)' : 'Configured') : 'Not Set'}`);
+console.log(`Anon Public Key: ${anonKey ? 'Configured' : 'Not Set'}`);
+console.log(`Database Connection String: ${dbUrl ? 'Configured' : 'Not Set'}`);
 console.log("------------------------------------------");
 
-if (!dbUrl || dbUrl.includes('YOUR_PASSWORD_HERE')) {
-  console.log("⚠️  NOTICE: PostgreSQL credentials are still set to placeholders.");
-  console.log("👉 Please update 'backend/.env' with your real Supabase parameters and database password.");
-  process.exit(0);
+if (!dbUrl) {
+  console.log("❌ DATABASE_URL is not set in backend/.env");
+  process.exit(1);
 }
 
 const pool = new Pool({
@@ -43,7 +40,7 @@ pool.query('SELECT NOW()', (err, res) => {
       if (tErr) {
         console.error("Could not fetch tables list:", tErr.message);
       } else {
-        console.log(`Tables in DB: ${tRes.rows.map(r => r.table_name).join(', ') || 'None (run server to initialize)'}`);
+        console.log(`Tables in DB: ${tRes.rows.map(r => r.table_name).join(', ') || 'None'}`);
       }
       pool.end();
     });

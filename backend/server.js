@@ -24,7 +24,7 @@ const authenticateJWT = async (req, res, next) => {
 
   const token = authHeader.split(' ')[1];
   try {
-    const supabaseUrl = process.env.SUPABASE_URL || 'https://cneyzyrqxbzifehjmtbd.supabase.co';
+    const supabaseUrl = process.env.SUPABASE_URL || 'https://mqkaatsydqiaksjeesdi.supabase.co';
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
     if (!supabaseAnonKey || supabaseAnonKey.includes('anon_public_key')) {

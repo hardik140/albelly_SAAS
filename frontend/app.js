@@ -39,9 +39,10 @@ let ws;
 // ==========================================
 // 🔑 SUPABASE CONFIGURATION
 // ==========================================
-const supabaseUrl = 'https://cneyzyrqxbzifehjmtbd.supabase.co';
-const supabaseAnonKey = 'your_supabase_anon_public_key_here'; // Replace this placeholder with your Supabase Anon API key
+const supabaseUrl = 'https://mqkaatsydqiaksjeesdi.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1xa2FhdHN5ZHFpYWtzamVlc2RpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1ODUzODIsImV4cCI6MjA5NjE2MTM4Mn0.Pcv1OeTaVGGNzJCcc6UGck45XG2UeG57hGjdo03O8Y0';
 let supabase = null;
+
 let isAuthBypass = true;
 
 function initSupabase() {
