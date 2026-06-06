@@ -252,46 +252,10 @@ async function loadAuditLogs() {
 // ==========================================
 // 🛠️ NAVIGATION & ACCESS CONTROL (RBAC)
 // ==========================================
-function switchPOSTab(tabId) {
-  const bookingTab = document.getElementById('tab-pos-order-booking');
-  const trackingTab = document.getElementById('tab-pos-order-tracking');
-  const bookingView = document.getElementById('pos-booking-view');
-  const trackingView = document.getElementById('pos-tracking-view');
-
-  if (tabId === 'catalog') {
-    bookingTab.classList.add('active');
-    trackingTab.classList.remove('active');
-    bookingView.style.display = 'block';
-    trackingView.style.display = 'none';
-  } else {
-    bookingTab.classList.remove('active');
-    trackingTab.classList.add('active');
-    bookingView.style.display = 'none';
-    trackingView.style.display = 'block';
-    renderSalesScreen();
-  }
-}
-window.switchPOSTab = switchPOSTab;
-
 window.viewOrderInvoice = function(orderId) {
   invoiceFrame.src = `/api/v1/sales/orders/${orderId}/invoice`;
   openModal('modal-invoice-viewer');
 };
-
-async function transitionOrderStatus(orderId, nextStatus) {
-  try {
-    await apiPut(`/api/v1/sales/orders/${orderId}/status`, {
-      status: nextStatus,
-      user_role: state.activeRole,
-      user_name: 'Sales Desk'
-    });
-    await loadOrders();
-    renderSalesScreen();
-  } catch (err) {
-    alert('Failed to update order status: ' + err.message);
-  }
-}
-window.transitionOrderStatus = transitionOrderStatus;
 
 async function loadDistributors() {
   try {
@@ -308,28 +272,14 @@ async function loadDistributors() {
       });
     }
 
-    // Populate tracking filter select dropdown
-    const select = document.getElementById('tracking-distributor-filter');
-    if (select) {
-      const prevVal = select.value;
-      select.innerHTML = '<option value="">-- All Distributors --</option>';
-      state.distributors.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d.name;
-        opt.textContent = d.name;
-        select.appendChild(opt);
-      });
-      select.value = prevVal;
-    }
+
   } catch (err) {
     console.error('Failed to load distributors:', err);
   }
 }
 
 function setupNavigation() {
-  // Tab buttons to switch booking vs tracking
-  document.getElementById('tab-pos-order-booking').addEventListener('click', () => switchPOSTab('catalog'));
-  document.getElementById('tab-pos-order-tracking').addEventListener('click', () => switchPOSTab('tracking'));
+
 
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -728,58 +678,7 @@ function renderSalesScreen() {
 
   renderCart();
 
-  // Render Dispatch Queue & Order Tracker Table
-  const ordersBody = document.getElementById('pos-orders-table-body');
-  if (ordersBody) {
-    ordersBody.innerHTML = '';
-    
-    const filterDist = document.getElementById('tracking-distributor-filter')?.value || '';
-    const filteredOrders = state.orders.filter(o => !filterDist || o.customer_name === filterDist);
-    
-    if (filteredOrders.length === 0) {
-      ordersBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); font-size:12px; padding:16px;">No orders found in queue.</td></tr>`;
-    } else {
-      filteredOrders.forEach(o => {
-        const subtotal = o.total_amount - o.tax_amount;
-        const gstPercent = (o.gst_rate !== undefined && o.gst_rate !== null) ? (o.gst_rate * 100).toFixed(1).replace('.0', '') : '18';
-        
-        let itemsHtml = '';
-        if (o.items && o.items.length > 0) {
-          itemsHtml = o.items.map(item => `${item.product_name} (${item.quantity})`).join(', ');
-        } else {
-          itemsHtml = '<span style="color:var(--text-muted)">None</span>';
-        }
-        
-        let statusClass = 'badge-warning';
-        let actionsHtml = '';
-        
-        if (o.status === 'PENDING') {
-          statusClass = 'badge-danger';
-          actionsHtml = `<button class="btn btn-secondary action-dot-btn" style="border-color:var(--soft-amber); color:var(--soft-amber);" onclick="transitionOrderStatus(${o.id}, 'DISPATCHED')">🚚 Dispatch</button>`;
-        } else if (o.status === 'DISPATCHED') {
-          statusClass = 'badge-warning';
-          actionsHtml = `<button class="btn btn-primary action-dot-btn" onclick="transitionOrderStatus(${o.id}, 'COMPLETED')">✅ Complete</button>`;
-        } else {
-          statusClass = 'badge-success';
-          actionsHtml = `<span style="font-size:11px; color:var(--mint-green); font-weight:600;">🎉 Completed</span>`;
-        }
-        
-        const locSuffix = o.customer_location ? ` <span style="font-size:11px; color:var(--text-muted);">(${o.customer_location})</span>` : '';
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td><a href="#" onclick="viewOrderInvoice(${o.id}); return false;" style="font-weight:700; color:var(--ice-blue); text-decoration:underline;">${o.order_code}</a></td>
-          <td>${o.order_date.substring(5, 16)}</td>
-          <td><strong>${o.customer_name}</strong>${locSuffix}</td>
-          <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${itemsHtml}">${itemsHtml}</td>
-          <td>₹${o.tax_amount.toFixed(2)} (${gstPercent}%)</td>
-          <td><strong>₹${o.total_amount.toFixed(2)}</strong></td>
-          <td><span class="badge ${statusClass}">${o.status}</span></td>
-          <td><div style="display:flex; gap:6px;">${actionsHtml}</div></td>
-        `;
-        ordersBody.appendChild(row);
-      });
-    }
-  }
+
 }
 
 // Edit product base price (Admin only)
@@ -1900,13 +1799,7 @@ function renderColdRoom() {
 // ✍️ FORMS EVENT TRIGGERS
 // ==========================================
 function setupFormHandlers() {
-  // Tracking filter change handler
-  const distFilter = document.getElementById('tracking-distributor-filter');
-  if (distFilter) {
-    distFilter.addEventListener('change', () => {
-      renderSalesScreen();
-    });
-  }
+
 
   const customerNameInput = document.getElementById('customer-name-input');
   if (customerNameInput) {
