@@ -143,7 +143,7 @@
       <header class="top-header">
         <div class="header-left">
           <h1 id="screen-title">Live Factory Floor Dashboard</h1>
-          <p id="screen-subtitle" class="text-secondary">Real-time production monitoring and logistics tracker</p>
+          <p id="screen-subtitle" class="text-secondary">Real-time production monitoring and batch tracker</p>
         </div>
         <div class="header-right">
           <div class="theme-toggle-btn" id="theme-toggle">
@@ -196,72 +196,35 @@
               <span class="metric-desc">Finished goods stock total</span>
             </div>
           </div>
-          <div class="metric-card card-glass">
-            <div class="metric-header">
-              <h3>Trucks at Gate</h3>
-              <span class="metric-icon">🚛</span>
-            </div>
-            <div class="metric-body">
-              <span class="metric-value" id="metric-gate-trucks">0</span>
-              <span class="metric-desc">Vehicles inside facility</span>
-            </div>
-          </div>
+
         </div>
 
-        <!-- Factory Main Content (Split Screen) -->
-        <div class="factory-layout-split">
-          <!-- Production Pipeline (Kanban) -->
-          <div class="kanban-panel card-glass">
-            <div class="panel-header">
-              <h2>Production Lifecycle Pipeline</h2>
-              <button class="btn btn-primary" id="btn-start-batch-trigger">⚙️ Launch Production Batch</button>
-            </div>
-            <div class="kanban-board">
-              <!-- Mixing Column -->
-              <div class="kanban-column" id="col-mixing">
-                <div class="column-header">Mixing <span class="col-count" id="count-mixing">0</span></div>
-                <div class="kanban-cards" id="cards-mixing"></div>
-              </div>
-              <!-- Aging Column -->
-              <div class="kanban-column" id="col-aging">
-                <div class="column-header">Aging <span class="col-count" id="count-aging">0</span></div>
-                <div class="kanban-cards" id="cards-aging"></div>
-              </div>
-              <!-- Churning Column -->
-              <div class="kanban-column" id="col-churning">
-                <div class="column-header">Churning & Freezing <span class="col-count" id="count-churning">0</span></div>
-                <div class="kanban-cards" id="cards-churning"></div>
-              </div>
-              <!-- Hardening Column -->
-              <div class="kanban-column" id="col-hardening">
-                <div class="column-header">Hardening Room <span class="col-count" id="count-hardening">0</span></div>
-                <div class="kanban-cards" id="cards-hardening"></div>
-              </div>
-            </div>
+        <!-- Factory Main Content -->
+        <div class="kanban-panel card-glass">
+          <div class="panel-header">
+            <h2>Production Lifecycle Pipeline</h2>
+            <button class="btn btn-primary" id="btn-start-batch-trigger">⚙️ Launch Production Batch</button>
           </div>
-
-          <!-- Gate Log (Logistics Manager) -->
-          <div class="gate-panel card-glass">
-            <div class="panel-header">
-              <h2>In-Out Logistics Gate Manager</h2>
-              <button class="btn btn-secondary" id="btn-checkin-trigger">➕ Register Vehicle</button>
+          <div class="kanban-board">
+            <!-- Mixing Column -->
+            <div class="kanban-column" id="col-mixing">
+              <div class="column-header">Mixing <span class="col-count" id="count-mixing">0</span></div>
+              <div class="kanban-cards" id="cards-mixing"></div>
             </div>
-            <div class="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Vehicle No</th>
-                    <th>Driver</th>
-                    <th>Purpose</th>
-                    <th>In-Gate</th>
-                    <th>Duration</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="gate-logs-table-body">
-                  <!-- Dynamic Gate Entries -->
-                </tbody>
-              </table>
+            <!-- Aging Column -->
+            <div class="kanban-column" id="col-aging">
+              <div class="column-header">Aging <span class="col-count" id="count-aging">0</span></div>
+              <div class="kanban-cards" id="cards-aging"></div>
+            </div>
+            <!-- Churning Column -->
+            <div class="kanban-column" id="col-churning">
+              <div class="column-header">Churning & Freezing <span class="col-count" id="count-churning">0</span></div>
+              <div class="kanban-cards" id="cards-churning"></div>
+            </div>
+            <!-- Hardening Column -->
+            <div class="kanban-column" id="col-hardening">
+              <div class="column-header">Hardening Room <span class="col-count" id="count-hardening">0</span></div>
+              <div class="kanban-cards" id="cards-hardening"></div>
             </div>
           </div>
         </div>
@@ -913,38 +876,7 @@
     </div>
   </div>
 
-  <!-- Modal B: Register Vehicle Check-In -->
-  <div class="modal-overlay" id="modal-gate-checkin">
-    <div class="modal-box">
-      <div class="modal-header">
-        <h3>🚛 Gate Register Vehicle Check-In</h3>
-        <button class="modal-close" data-close="modal-gate-checkin">&times;</button>
-      </div>
-      <form id="gate-checkin-form">
-        <div class="form-group">
-          <label for="vehicle-no-input">Vehicle Number Plate:</label>
-          <input type="text" id="vehicle-no-input" class="form-control" placeholder="MH-12-AB-1234" required>
-        </div>
-        <div class="form-group">
-          <label for="driver-name-input">Driver Full Name:</label>
-          <input type="text" id="driver-name-input" class="form-control" placeholder="Satish Patil" required>
-        </div>
-        <div class="form-group">
-          <label for="purpose-input">Purpose of Visit:</label>
-          <select id="purpose-input" class="form-control" required>
-            <option value="Raw Material Delivery (Dairy)">Raw Material Delivery (Dairy)</option>
-            <option value="Raw Material Delivery (Dry Goods)">Raw Material Delivery (Dry Goods)</option>
-            <option value="Sales Dispatch Pickup">Sales Dispatch Pickup</option>
-            <option value="Maintenance / Security">Maintenance / Security</option>
-          </select>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-secondary" data-close="modal-gate-checkin">Cancel</button>
-          <button type="submit" class="btn btn-primary">Log Gate In</button>
-        </div>
-      </form>
-    </div>
-  </div>
+
 
   <!-- Modal C: Register Raw Materials Stock -->
   <div class="modal-overlay" id="modal-add-inventory">

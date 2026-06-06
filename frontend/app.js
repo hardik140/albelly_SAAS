@@ -78,7 +78,7 @@ const themeToggle = document.getElementById('theme-toggle');
 
 // Modals
 const modalStartBatch = document.getElementById('modal-start-batch');
-const modalGateCheckin = document.getElementById('modal-gate-checkin');
+
 const modalAddInventory = document.getElementById('modal-add-inventory');
 const modalInvoiceViewer = document.getElementById('modal-invoice-viewer');
 const invoiceFrame = document.getElementById('invoice-frame');
@@ -307,7 +307,7 @@ function switchScreen(screenId) {
   let subtitle = 'Stitch Ice Cream ERP';
   if (screenId === 'factory-floor') {
     title = 'Live Factory Floor Dashboard';
-    subtitle = 'Real-time production monitoring and logistics tracker';
+    subtitle = 'Real-time production monitoring and batch tracker';
   } else if (screenId === 'sales-desk') {
     title = 'Interactive Sales & Billing Desk';
     subtitle = 'Distributor order book POS and dispatch queuing';
@@ -451,9 +451,7 @@ function renderMetrics() {
   const coldPieces = state.finishedGoods.reduce((sum, item) => sum + item.stock_qty, 0);
   document.getElementById('metric-cold-room').textContent = `${coldPieces} pcs`;
 
-  // Metric D: Trucks in gate
-  const trucksIn = state.gateLogs.filter(t => !t.time_out).length;
-  document.getElementById('metric-gate-trucks').textContent = trucksIn;
+
 }
 
 function renderFactoryScreen() {
@@ -532,59 +530,10 @@ function renderFactoryScreen() {
     document.getElementById(`count-${key.toLowerCase().replace('_freezing','')}`).textContent = columnCounters[key];
   });
 
-  // Render Gate Logs Table
-  const tableBody = document.getElementById('gate-logs-table-body');
-  tableBody.innerHTML = '';
-
-  const activeGateLogs = state.gateLogs.slice(0, 10); // Show top 10 logs
-  
-  if (activeGateLogs.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;">No vehicle logs currently checked in.</td></tr>`;
-    return;
-  }
-
-  activeGateLogs.forEach(log => {
-    let actionCell = '';
-    if (!log.time_out) {
-      if (hasPermission('VEHICLE_LOGISTICS')) {
-        actionCell = `<button class="btn btn-danger action-dot-btn" onclick="checkoutVehicle(${log.id})">Out-Gate Log</button>`;
-      } else {
-        actionCell = `<span class="badge badge-warning">IN FACTORY</span>`;
-      }
-    } else {
-      actionCell = `<span class="badge badge-success">CHECKED OUT</span>`;
-    }
-
-    let durationCell = '';
-    if (log.time_out) {
-      const elapsed = Math.round((new Date(log.time_out) - new Date(log.time_in)) / 60000);
-      durationCell = `${elapsed} min`;
-    } else {
-      durationCell = `<span class="live-truck-timer" data-timein="${log.time_in}">Ticking...</span>`;
-    }
-
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><strong>${log.vehicle_number}</strong></td>
-      <td>${log.driver_name}</td>
-      <td>${log.purpose}</td>
-      <td>${log.time_in.substring(11, 19)}</td>
-      <td>${durationCell}</td>
-      <td>${actionCell}</td>
-    `;
-    tableBody.appendChild(row);
-  });
-
   // Enable/Disable Launch Batch button
   const launchBtn = document.getElementById('btn-start-batch-trigger');
   launchBtn.disabled = !hasPermission('START_PRODUCTION');
   launchBtn.style.opacity = hasPermission('START_PRODUCTION') ? '1' : '0.4';
-
-  // Enable/Disable Register Truck button
-  const truckBtn = document.getElementById('btn-btn-checkin-trigger');
-  const registerBtn = document.getElementById('btn-checkin-trigger');
-  registerBtn.disabled = !hasPermission('VEHICLE_LOGISTICS');
-  registerBtn.style.opacity = hasPermission('VEHICLE_LOGISTICS') ? '1' : '0.4';
 }
 
 // Transition batch states
@@ -596,14 +545,7 @@ async function transitionBatch(batchId, nextStatus) {
   }
 }
 
-// Log a truck out
-async function checkoutVehicle(logId) {
-  try {
-    await apiPut(`/api/v1/logistics/gate-out/${logId}`);
-  } catch (err) {
-    alert('Log checkout failed: ' + err.message);
-  }
-}
+
 
 // ==========================================
 // 💰 SCREEN B: SALES POS & INVOICING
@@ -1840,9 +1782,7 @@ function setupFormHandlers() {
 
   document.getElementById('batch-recipe-select').addEventListener('change', triggerRecipePreview);
 
-  document.getElementById('btn-checkin-trigger').addEventListener('click', () => {
-    openModal('modal-gate-checkin');
-  });
+
 
   document.getElementById('btn-add-inventory-trigger').addEventListener('click', () => {
     // Set default date today
@@ -1864,21 +1804,7 @@ function setupFormHandlers() {
     }
   });
 
-  // Submit checkin gate log
-  document.getElementById('gate-checkin-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const plate = document.getElementById('vehicle-no-input').value.toUpperCase();
-    const driver = document.getElementById('driver-name-input').value;
-    const purpose = document.getElementById('purpose-input').value;
 
-    try {
-      await apiPost('/api/v1/logistics/gate-in', { vehicle_number: plate, driver_name: driver, purpose });
-      closeModal('modal-gate-checkin');
-      document.getElementById('gate-checkin-form').reset();
-    } catch (err) {
-      alert('Gate check-in failed: ' + err.message);
-    }
-  });
 
   // Submit raw inventory batch
   document.getElementById('add-inventory-form').addEventListener('submit', async (e) => {
