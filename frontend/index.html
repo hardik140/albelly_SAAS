@@ -308,30 +308,64 @@
         <div class="matrix-layout-split">
           <!-- Inventory Table -->
           <div class="inventory-table-panel card-glass">
-            <div class="panel-header">
-              <h2>Perishable Materials Inventory (FEFO Alerts)</h2>
-              <button class="btn btn-primary" id="btn-add-inventory-trigger">➕ Add Raw Stock Batch</button>
+            <div class="matrix-tab-bar" style="display: flex; gap: 12px; margin-bottom: 15px; border-bottom: 1px solid var(--border-card); padding-bottom: 12px;">
+              <button class="filter-btn active" id="tab-inv-raw" style="font-weight:700; font-size:13px; padding: 8px 16px;">🥛 Raw Materials</button>
+              <button class="filter-btn" id="tab-inv-finished" style="font-weight:700; font-size:13px; padding: 8px 16px;">🍦 Finished Products</button>
             </div>
-            <div class="matrix-warning-alert alert-amber">
-              ⚠️ <strong>First-Expired, First-Out (FEFO) Warning:</strong> Batch rows highlighted in <span style="color:var(--soft-amber); font-weight:bold;">Amber</span> represent perishable stock expiring in less than 3 days. They will be prioritized during production start.
+
+            <!-- Raw Materials View -->
+            <div id="inv-raw-view">
+              <div class="panel-header" style="border-bottom: none; padding-bottom: 0; margin-bottom: 15px;">
+                <h2>Raw Materials Inventory (FEFO Alerts)</h2>
+                <button class="btn btn-primary" id="btn-add-inventory-trigger">➕ Add Raw Stock Batch</button>
+              </div>
+              <div class="matrix-warning-alert alert-amber" style="margin-bottom: 15px;">
+                ⚠️ <strong>First-Expired, First-Out (FEFO) Warning:</strong> Batch rows highlighted in <span style="color:var(--soft-amber); font-weight:bold;">Amber</span> represent perishable stock expiring in less than 3 days. They will be prioritized during production start.
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Material Name</th>
+                      <th>SKU</th>
+                      <th>Supplier Batch</th>
+                      <th>Received Qty</th>
+                      <th>Remaining Qty</th>
+                      <th>Expiry Date</th>
+                      <th>FEFO Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="inventory-matrix-table-body">
+                    <!-- Dynamic Raw Batch Entries -->
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div class="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Material Name</th>
-                    <th>SKU</th>
-                    <th>Supplier Batch</th>
-                    <th>Received Qty</th>
-                    <th>Remaining Qty</th>
-                    <th>Expiry Date</th>
-                    <th>FEFO Status</th>
-                  </tr>
-                </thead>
-                <tbody id="inventory-matrix-table-body">
-                  <!-- Dynamic Raw Batch Entries -->
-                </tbody>
-              </table>
+
+            <!-- Finished Products View -->
+            <div id="inv-finished-view" style="display: none;">
+              <div class="panel-header" style="border-bottom: none; padding-bottom: 0; margin-bottom: 15px;">
+                <h2>Finished Product Batches</h2>
+                <button class="btn btn-primary" id="btn-add-finished-batch-trigger">➕ Record Finished Batch</button>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Batch Code</th>
+                      <th>Flavor / Product</th>
+                      <th>Status</th>
+                      <th>Quantity Produced</th>
+                      <th>Expiry Date</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="finished-matrix-table-body">
+                    <!-- Dynamic Finished Batch Entries -->
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -903,6 +937,50 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" data-close="modal-add-inventory">Cancel</button>
           <button type="submit" class="btn btn-primary">Receive Stock Batch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Record Finished Product Batch -->
+  <div class="modal-overlay" id="modal-add-finished-batch">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>➕ Record Finished Product Batch</h3>
+        <button class="modal-close" data-close="modal-add-finished-batch">&times;</button>
+      </div>
+      <form id="add-finished-batch-form">
+        <div class="form-group">
+          <label for="fin-batch-code-input">Batch Code:</label>
+          <input type="text" id="fin-batch-code-input" class="form-control" placeholder="e.g. BAT-VAN-2938" required>
+        </div>
+        <div class="form-group">
+          <label for="fin-flavor-select">Select Flavor/Product:</label>
+          <select id="fin-flavor-select" class="form-control" required>
+            <!-- Dynamically populated from finished goods -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="fin-status-select">Production Status:</label>
+          <select id="fin-status-select" class="form-control" required>
+            <option value="MIXING">Mixing</option>
+            <option value="AGING">Aging</option>
+            <option value="CHURNING_FREEZING">Churning & Freezing</option>
+            <option value="HARDENING">Hardening Room</option>
+            <option value="COMPLETED">Completed</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="fin-quantity-input">Quantity Produced (pcs):</label>
+          <input type="number" id="fin-quantity-input" class="form-control" min="0" placeholder="e.g. 150" value="0" required>
+        </div>
+        <div class="form-group">
+          <label for="fin-expiry-input">Expiry Date (optional):</label>
+          <input type="date" id="fin-expiry-input" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-close="modal-add-finished-batch">Cancel</button>
+          <button type="submit" class="btn btn-primary">Record Batch</button>
         </div>
       </form>
     </div>

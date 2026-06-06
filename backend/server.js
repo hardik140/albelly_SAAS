@@ -321,6 +321,37 @@ app.delete('/api/v1/inventory/raw-materials/:id', async (req, res) => {
   }
 });
 
+// DELETE Raw Material Batch
+app.delete('/api/v1/inventory/batches/:id', async (req, res) => {
+  const { id } = req.params;
+  const { user_role, user_name } = req.body;
+  try {
+    const batch = await dbGet("SELECT * FROM inventory_batches WHERE id = ?", [id]);
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+    const rawMaterial = await dbGet("SELECT * FROM raw_materials WHERE id = ?", [batch.raw_material_id]);
+    if (rawMaterial) {
+      const newStock = Math.max(0, rawMaterial.current_stock - batch.remaining_quantity);
+      await dbRun("UPDATE raw_materials SET current_stock = ? WHERE id = ?", [newStock, batch.raw_material_id]);
+    }
+    await dbRun("DELETE FROM inventory_batches WHERE id = ?", [id]);
+    await logAudit(
+      user_role || "INVENTORY_MANAGER",
+      user_name || "Manager",
+      "BATCH_DELETED",
+      "inventory_batches",
+      id,
+      { batch_number: batch.batch_number, remaining_quantity: batch.remaining_quantity },
+      null
+    );
+    broadcast("INVENTORY_UPDATED", { SKU: rawMaterial ? rawMaterial.SKU : null, deleted_batch: batch.batch_number });
+    res.json({ success: true, message: `Deleted batch ${batch.batch_number} successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==========================================
 // 🍦 RECIPES API
 // ==========================================
@@ -455,6 +486,91 @@ app.get('/api/v1/production/batches', async (req, res) => {
   try {
     const batches = await dbAll("SELECT * FROM production_batches ORDER BY id DESC");
     res.json(batches);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Add Finished Product Batch (Manual)
+app.post('/api/v1/production/batches', async (req, res) => {
+  const { batch_code, flavor_name, status, quantity_produced, expiry_date, user_role, user_name } = req.body;
+  if (!batch_code || !flavor_name || !status) {
+    return res.status(400).json({ error: "batch_code, flavor_name, and status are required" });
+  }
+  try {
+    let expiryStr = expiry_date || null;
+    if (status === 'COMPLETED' && !expiryStr) {
+      const exp = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+      expiryStr = exp.toISOString().replace('T', ' ').substring(0, 19);
+    }
+    
+    let recipeId = null;
+    const recipe = await dbGet("SELECT * FROM recipes WHERE name = ?", [flavor_name]);
+    if (recipe) {
+      recipeId = recipe.id;
+    }
+
+    const result = await dbRun(
+      "INSERT INTO production_batches (batch_code, recipe_id, flavor_name, status, quantity_produced, expiry_date) VALUES (?, ?, ?, ?, ?, ?)",
+      [batch_code, recipeId, flavor_name, status, parseFloat(quantity_produced || 0), expiryStr]
+    );
+
+    if (status === 'COMPLETED') {
+      const fg = await dbGet("SELECT * FROM finished_goods WHERE name = ?", [flavor_name]);
+      if (fg) {
+        await dbRun("UPDATE finished_goods SET stock_qty = ? WHERE id = ?", [fg.stock_qty + parseFloat(quantity_produced || 0), fg.id]);
+      }
+    }
+
+    await logAudit(
+      user_role || "PRODUCTION_SUPERVISOR",
+      user_name || "Supervisor",
+      "BATCH_CREATED_MANUAL",
+      "production_batches",
+      result.lastID,
+      null,
+      { batch_code, flavor_name, status, quantity_produced, expiry_date: expiryStr }
+    );
+
+    broadcast("PRODUCTION_STARTED", { batch_code, flavor_name, status });
+    res.json({ success: true, id: result.lastID, batch_code });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Finished Product Batch
+app.delete('/api/v1/production/batches/:id', async (req, res) => {
+  const { id } = req.params;
+  const { user_role, user_name } = req.body;
+  try {
+    const batch = await dbGet("SELECT * FROM production_batches WHERE id = ?", [id]);
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+
+    if (batch.status === 'COMPLETED' && batch.quantity_produced > 0) {
+      const fg = await dbGet("SELECT * FROM finished_goods WHERE name = ?", [batch.flavor_name]);
+      if (fg) {
+        const newStock = Math.max(0, fg.stock_qty - batch.quantity_produced);
+        await dbRun("UPDATE finished_goods SET stock_qty = ? WHERE id = ?", [newStock, fg.id]);
+      }
+    }
+
+    await dbRun("DELETE FROM production_batches WHERE id = ?", [id]);
+
+    await logAudit(
+      user_role || "PRODUCTION_SUPERVISOR",
+      user_name || "Supervisor",
+      "BATCH_DELETED",
+      "production_batches",
+      id,
+      { batch_code: batch.batch_code, status: batch.status, quantity_produced: batch.quantity_produced },
+      null
+    );
+
+    broadcast("PRODUCTION_STARTED", { deleted_batch: batch.batch_code });
+    res.json({ success: true, message: `Deleted production batch ${batch.batch_code} successfully.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -81,6 +81,7 @@ const modalStartBatch = document.getElementById('modal-start-batch');
 
 const modalAddInventory = document.getElementById('modal-add-inventory');
 const modalInvoiceViewer = document.getElementById('modal-invoice-viewer');
+const modalAddFinishedBatch = document.getElementById('modal-add-finished-batch');
 const invoiceFrame = document.getElementById('invoice-frame');
 
 // Initialization
@@ -287,6 +288,28 @@ function setupNavigation() {
       switchScreen(screenId);
     });
   });
+
+  // Tab buttons to switch raw vs finished inventory
+  const tabRaw = document.getElementById('tab-inv-raw');
+  const tabFinished = document.getElementById('tab-inv-finished');
+  const viewRaw = document.getElementById('inv-raw-view');
+  const viewFinished = document.getElementById('inv-finished-view');
+
+  if (tabRaw && tabFinished) {
+    tabRaw.addEventListener('click', () => {
+      tabRaw.classList.add('active');
+      tabFinished.classList.remove('active');
+      viewRaw.style.display = 'block';
+      viewFinished.style.display = 'none';
+    });
+
+    tabFinished.addEventListener('click', () => {
+      tabRaw.classList.remove('active');
+      tabFinished.classList.add('active');
+      viewRaw.style.display = 'none';
+      viewFinished.style.display = 'block';
+    });
+  }
 }
 
 function switchScreen(screenId) {
@@ -874,11 +897,13 @@ document.getElementById('btn-print-invoice').addEventListener('click', () => pro
 // 📦 SCREEN C: EXPIRY & TRACEABILITY MATRIX
 // ==========================================
 function renderInventoryScreen() {
-  const tableBody = document.getElementById('inventory-matrix-table-body');
-  tableBody.innerHTML = '';
+  // 1. Render Raw Materials
+  const rawTableBody = document.getElementById('inventory-matrix-table-body');
+  rawTableBody.innerHTML = '';
 
   const now = new Date();
   const warningThreshold = 3 * 24 * 60 * 60 * 1000; // 3 days
+  const canEditRaw = hasPermission('ADD_INVENTORY');
 
   state.inventoryBatches.forEach(batch => {
     const expiry = new Date(batch.expiry_date);
@@ -909,14 +934,54 @@ function renderInventoryScreen() {
       <td><strong>${batch.remaining_quantity} ${batch.unit}</strong></td>
       <td>${batch.expiry_date.split(' ')[0]}</td>
       <td><span class="badge ${statusBadge}">${statusText}</span></td>
+      <td>
+        <button class="btn btn-danger action-dot-btn" onclick="deleteRawBatch(${batch.id})" ${canEditRaw ? '' : 'disabled style="opacity:0.4; cursor:not-allowed;"'}>🗑️ Delete</button>
+      </td>
     `;
-    tableBody.appendChild(row);
+    rawTableBody.appendChild(row);
   });
 
   // Enable/Disable Add Stock button
   const addStockBtn = document.getElementById('btn-add-inventory-trigger');
-  addStockBtn.disabled = !hasPermission('ADD_INVENTORY');
-  addStockBtn.style.opacity = hasPermission('ADD_INVENTORY') ? '1' : '0.4';
+  addStockBtn.disabled = !canEditRaw;
+  addStockBtn.style.opacity = canEditRaw ? '1' : '0.4';
+
+  // 2. Render Finished Products
+  const finishedTableBody = document.getElementById('finished-matrix-table-body');
+  finishedTableBody.innerHTML = '';
+  const canEditFinished = hasPermission('START_PRODUCTION');
+
+  state.productionBatches.forEach(batch => {
+    const row = document.createElement('tr');
+    
+    let statusClass = 'badge-secondary';
+    if (batch.status === 'MIXING') statusClass = 'badge-info';
+    else if (batch.status === 'AGING') statusClass = 'badge-warning';
+    else if (batch.status === 'CHURNING_FREEZING') statusClass = 'badge-warning';
+    else if (batch.status === 'HARDENING') statusClass = 'badge-warning';
+    else if (batch.status === 'COMPLETED') statusClass = 'badge-success';
+
+    const expiryStr = batch.expiry_date ? batch.expiry_date.split(' ')[0] : 'N/A';
+
+    row.innerHTML = `
+      <td><span class="card-code">${batch.batch_code}</span></td>
+      <td><strong>${batch.flavor_name}</strong></td>
+      <td><span class="badge ${statusClass}">${batch.status.replace('_', ' ')}</span></td>
+      <td><strong>${batch.quantity_produced} pcs</strong></td>
+      <td>${expiryStr}</td>
+      <td>
+        <button class="btn btn-danger action-dot-btn" onclick="deleteFinishedBatch(${batch.id})" ${canEditFinished ? '' : 'disabled style="opacity:0.4; cursor:not-allowed;"'}>🗑️ Delete</button>
+      </td>
+    `;
+    finishedTableBody.appendChild(row);
+  });
+
+  // Enable/Disable Record Finished button
+  const recordFinishedBtn = document.getElementById('btn-add-finished-batch-trigger');
+  if (recordFinishedBtn) {
+    recordFinishedBtn.disabled = !canEditFinished;
+    recordFinishedBtn.style.opacity = canEditFinished ? '1' : '0.4';
+  }
 
   // Fill traceability select dropdown options
   const select = document.getElementById('traceability-batch-select');
@@ -930,6 +995,29 @@ function renderInventoryScreen() {
     select.appendChild(opt);
   });
 }
+
+window.deleteRawBatch = async function(batchId) {
+  if (!confirm('Are you sure you want to delete this raw material stock batch? This will deduct the batch remaining quantity from the raw material total stock.')) return;
+  try {
+    await apiDelete(`/api/v1/inventory/batches/${batchId}`);
+    await loadRawMaterials();
+    renderInventoryScreen();
+  } catch (err) {
+    alert('Failed to delete batch: ' + err.message);
+  }
+};
+
+window.deleteFinishedBatch = async function(batchId) {
+  if (!confirm('Are you sure you want to delete this finished production batch? If completed, this will deduct the batch quantity from the finished product stock.')) return;
+  try {
+    await apiDelete(`/api/v1/production/batches/${batchId}`);
+    await loadProductionBatches();
+    await loadFinishedGoods();
+    renderInventoryScreen();
+  } catch (err) {
+    alert('Failed to delete batch: ' + err.message);
+  }
+};
 
 // Traceability diagram drawing logic
 document.getElementById('traceability-batch-select').addEventListener('change', async (e) => {
@@ -1836,6 +1924,55 @@ function setupFormHandlers() {
       alert('Inventory add failed: ' + err.message);
     }
   });
+
+  // Modal open for manual finished product batch
+  const recordFinishedBtn = document.getElementById('btn-add-finished-batch-trigger');
+  if (recordFinishedBtn) {
+    recordFinishedBtn.addEventListener('click', () => {
+      const select = document.getElementById('fin-flavor-select');
+      select.innerHTML = '';
+      state.finishedGoods.forEach(fg => {
+        const opt = document.createElement('option');
+        opt.value = fg.name;
+        opt.textContent = fg.name;
+        select.appendChild(opt);
+      });
+      document.getElementById('fin-expiry-input').value = '';
+      document.getElementById('fin-quantity-input').value = '0';
+      document.getElementById('fin-batch-code-input').value = `BAT-FG-${Date.now().toString().slice(-4)}`;
+      openModal('modal-add-finished-batch');
+    });
+  }
+
+  // Submit manual finished product batch form
+  const addFinishedBatchForm = document.getElementById('add-finished-batch-form');
+  if (addFinishedBatchForm) {
+    addFinishedBatchForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = document.getElementById('fin-batch-code-input').value.trim();
+      const flavor = document.getElementById('fin-flavor-select').value;
+      const status = document.getElementById('fin-status-select').value;
+      const qty = parseFloat(document.getElementById('fin-quantity-input').value || 0);
+      const expiry = document.getElementById('fin-expiry-input').value;
+
+      try {
+        await apiPost('/api/v1/production/batches', {
+          batch_code: code,
+          flavor_name: flavor,
+          status,
+          quantity_produced: qty,
+          expiry_date: expiry ? expiry + ' 00:00:00' : null
+        });
+        closeModal('modal-add-finished-batch');
+        addFinishedBatchForm.reset();
+        await loadProductionBatches();
+        await loadFinishedGoods();
+        renderInventoryScreen();
+      } catch (err) {
+        alert('Error recording finished product batch: ' + err.message);
+      }
+    });
+  }
 
   // Modal open for registering new raw material type
   const addMaterialTrigger = document.getElementById('btn-add-material-trigger');
