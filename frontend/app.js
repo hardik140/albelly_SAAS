@@ -879,6 +879,7 @@ function renderCart() {
     document.getElementById('price-tax').textContent = '₹0.00';
     document.getElementById('price-total').textContent = '₹0.00';
     document.getElementById('btn-generate-invoice').disabled = true;
+    document.getElementById('btn-print-invoice').disabled = true;
     return;
   }
 
@@ -936,6 +937,7 @@ function renderCart() {
   // Checkout Permissions Check
   const canCheckout = hasPermission('CREATE_ORDER');
   document.getElementById('btn-generate-invoice').disabled = !canCheckout;
+  document.getElementById('btn-print-invoice').disabled = !canCheckout;
 }
 
 // Recalculate cart totals without full re-render (avoids losing input focus)
@@ -962,8 +964,8 @@ window.removeFromCart = function(prodName) {
   renderSalesScreen();
 };
 
-// Generate bill trigger
-document.getElementById('btn-generate-invoice').addEventListener('click', async () => {
+// Generate bill trigger helper
+async function processCheckout(autoPrint = false) {
   const customerName = document.getElementById('customer-name-input').value.trim();
   if (!customerName) {
     alert('Please enter a distributor or customer name.');
@@ -1001,6 +1003,20 @@ document.getElementById('btn-generate-invoice').addEventListener('click', async 
     // Refresh POS catalog view
     renderSalesScreen();
 
+    // Setup print hook on iframe load if requested
+    if (autoPrint) {
+      invoiceFrame.onload = () => {
+        try {
+          invoiceFrame.contentWindow.print();
+        } catch (e) {
+          console.error('Auto print failed:', e);
+        }
+        invoiceFrame.onload = null; // Clean up hook
+      };
+    } else {
+      invoiceFrame.onload = null;
+    }
+
     // Open invoice preview frame in modal
     invoiceFrame.src = `/api/v1/sales/orders/${result.orderId}/invoice`;
     openModal('modal-invoice-viewer');
@@ -1008,7 +1024,10 @@ document.getElementById('btn-generate-invoice').addEventListener('click', async 
   } catch (err) {
     alert('Checkout failed: ' + err.message);
   }
-});
+}
+
+document.getElementById('btn-generate-invoice').addEventListener('click', () => processCheckout(false));
+document.getElementById('btn-print-invoice').addEventListener('click', () => processCheckout(true));
 
 // ==========================================
 // 📦 SCREEN C: EXPIRY & TRACEABILITY MATRIX
