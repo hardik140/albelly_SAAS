@@ -41,14 +41,14 @@ let ws;
 // ==========================================
 const supabaseUrl = 'https://mqkaatsydqiaksjeesdi.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1xa2FhdHN5ZHFpYWtzamVlc2RpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1ODUzODIsImV4cCI6MjA5NjE2MTM4Mn0.Pcv1OeTaVGGNzJCcc6UGck45XG2UeG57hGjdo03O8Y0';
-let supabase = null;
+let supabaseClient = null;
 
 let isAuthBypass = true;
 
 function initSupabase() {
   if (supabaseAnonKey && supabaseAnonKey !== 'your_supabase_anon_public_key_here') {
     try {
-      supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+      supabaseClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
       isAuthBypass = false;
       console.log('Supabase client successfully initialized!');
     } catch (e) {
@@ -2207,9 +2207,9 @@ async function setupAuth() {
   }
 
   // Check for existing session on page load
-  if (!isAuthBypass && supabase) {
+  if (!isAuthBypass && supabaseClient) {
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      const { data: { session }, error } = await supabaseClient.auth.getSession();
       if (session) {
         handleSuccessfulLogin(session.user, session.access_token);
         return;
@@ -2274,7 +2274,7 @@ async function setupAuth() {
     try {
       if (isSignUpMode) {
         // Sign Up with Supabase
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await supabaseClient.auth.signUp({
           email,
           password,
           options: {
@@ -2302,7 +2302,7 @@ async function setupAuth() {
           alert('Registration successful! Logging in...');
           
           // Try to sign in automatically
-          const loginRes = await supabase.auth.signInWithPassword({ email, password });
+          const loginRes = await supabaseClient.auth.signInWithPassword({ email, password });
           if (loginRes.error) throw loginRes.error;
           if (loginRes.data.session) {
             handleSuccessfulLogin(loginRes.data.session.user, loginRes.data.session.access_token);
@@ -2310,7 +2310,7 @@ async function setupAuth() {
         }
       } else {
         // Sign In with Supabase
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (data.session) {
           handleSuccessfulLogin(data.session.user, data.session.access_token);
@@ -2324,8 +2324,8 @@ async function setupAuth() {
 
   // Handle Logout
   btnAuthLogout.addEventListener('click', async () => {
-    if (!isAuthBypass && supabase) {
-      await supabase.auth.signOut();
+    if (!isAuthBypass && supabaseClient) {
+      await supabaseClient.auth.signOut();
     }
     
     // Clear state & storage
