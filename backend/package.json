@@ -1,7 +1,7 @@
 {
-  "name": "stitch-backend",
+  "name": "albelly-backend",
   "version": "1.0.0",
-  "description": "Backend API for Stitch ERP & Manufacturing Dashboard",
+  "description": "Backend API for Albelly ERP & Manufacturing Dashboard",
   "main": "server.js",
   "dependencies": {
     "cors": "^2.8.5",

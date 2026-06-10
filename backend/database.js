@@ -102,6 +102,7 @@ async function initDb() {
       batch_number TEXT NOT NULL,
       quantity_received REAL NOT NULL,
       remaining_quantity REAL NOT NULL,
+      unit_price REAL NOT NULL DEFAULT 0.0,
       received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       expiry_date TIMESTAMP NOT NULL
     )`);
@@ -164,7 +165,9 @@ async function initDb() {
       tax_amount REAL NOT NULL,
       status TEXT NOT NULL CHECK(status IN ('PENDING', 'DISPATCHED', 'COMPLETED')),
       gst_rate REAL NOT NULL DEFAULT 0.18,
-      customer_location TEXT
+      customer_location TEXT,
+      customer_gstin TEXT,
+      payment_status TEXT
     )`);
 
     // 9. Order Items Table
@@ -211,6 +214,8 @@ async function initDb() {
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
       location TEXT,
+      gstin TEXT,
+      phone TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -235,6 +240,40 @@ async function initDb() {
       role TEXT NOT NULL CHECK(role IN ('ADMIN', 'INVENTORY_MANAGER', 'PRODUCTION_SUPERVISOR', 'SALES_AGENT')),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
+
+    // 15. Workers Table
+    await client.query(`CREATE TABLE IF NOT EXISTS workers (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      hourly_rate REAL NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    // 16. Worker Shifts Table
+    await client.query(`CREATE TABLE IF NOT EXISTS worker_shifts (
+      id SERIAL PRIMARY KEY,
+      worker_id INTEGER NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
+      time_in TIMESTAMP WITH TIME ZONE NOT NULL,
+      time_out TIMESTAMP WITH TIME ZONE,
+      hourly_rate REAL NOT NULL,
+      total_hours REAL,
+      payment_amount REAL,
+      is_paid BOOLEAN NOT NULL DEFAULT FALSE
+    )`);
+
+    // 17. Create Performance Indices for highly optimized queries
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_inventory_batches_raw_material_expiry 
+      ON inventory_batches (raw_material_id, expiry_date, remaining_quantity)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_order_items_order_id 
+      ON order_items (order_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_orders_customer_name_date 
+      ON orders (customer_name, order_date DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe_id 
+      ON recipe_ingredients (recipe_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_production_batches_flavor_status 
+      ON production_batches (flavor_name, status)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_worker_shifts_worker_id 
+      ON worker_shifts (worker_id)`);
 
     await client.query('COMMIT');
     console.log('PostgreSQL database tables verified and initialized successfully.');
@@ -305,41 +344,41 @@ async function seedDatabase() {
 
     // Milk batches
     const dateExpired = new Date(now.getTime() - 24 * 60 * 60 * 1000 * 2);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [milkId, "BAT-MILK-EXP", 200, 200, formatTime(dateExpired)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [milkId, "BAT-MILK-EXP", 200, 200, 40.0, formatTime(dateExpired)]);
 
     const dateNearExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 2.5);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [milkId, "BAT-MILK-NEAR", 500, 500, formatTime(dateNearExpiry)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [milkId, "BAT-MILK-NEAR", 500, 500, 42.0, formatTime(dateNearExpiry)]);
 
     const dateFreshMilk = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 12);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [milkId, "BAT-MILK-FRESH", 550, 550, formatTime(dateFreshMilk)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [milkId, "BAT-MILK-FRESH", 550, 550, 39.5, formatTime(dateFreshMilk)]);
 
     // Cream batches
     const dateNearCream = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 3.5);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [creamId, "BAT-CRM-001", 300, 300, formatTime(dateNearCream)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [creamId, "BAT-CRM-001", 300, 300, 85.0, formatTime(dateNearCream)]);
     const dateFreshCream = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 15);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [creamId, "BAT-CRM-002", 380, 380, formatTime(dateFreshCream)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [creamId, "BAT-CRM-002", 380, 380, 80.0, formatTime(dateFreshCream)]);
 
     // Other goods (longer expiry)
     const dateSugar = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 180);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [sugarId, "BAT-SUG-01", 450, 450, formatTime(dateSugar)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [sugarId, "BAT-SUG-01", 450, 450, 60.0, formatTime(dateSugar)]);
     
     const dateVan = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 365);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [vanillaId, "BAT-VAN-01", 45, 45, formatTime(dateVan)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [vanillaId, "BAT-VAN-01", 45, 45, 450.0, formatTime(dateVan)]);
 
     const dateCocoa = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 200);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [cocoaId, "BAT-COCOA-01", 85, 85, formatTime(dateCocoa)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [cocoaId, "BAT-COCOA-01", 85, 85, 300.0, formatTime(dateCocoa)]);
 
     const dateStab = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 90);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) VALUES ($1, $2, $3, $4, $5)", 
-      [stabId, "BAT-STAB-01", 25, 25, formatTime(dateStab)]);
+    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+      [stabId, "BAT-STAB-01", 25, 25, 200.0, formatTime(dateStab)]);
 
     // Seed Recipes
     const rVanillaRes = await client.query("INSERT INTO recipes (name, yield_quantity, yield_unit) VALUES ($1, $2, $3) RETURNING id", ["Vanilla 1L Brick", 100, "pcs"]);

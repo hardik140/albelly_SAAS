@@ -1,5 +1,5 @@
 /* ==========================================
-   Stitch ERP Premium Design System
+   Albelly ERP Premium Design System
    ========================================== */
 
 /* Design Tokens & Variables */
@@ -651,9 +651,12 @@ body.light-mode tr:hover td {
 /* Screen B: Interactive Sales Desk Split */
 .sales-split-container {
   display: grid;
-  grid-template-columns: 3fr 2fr;
+  grid-template-columns: 1fr;
+  max-width: 600px;
+  margin: 0 auto;
   gap: 24px;
   align-items: start;
+  width: 100%;
 }
 
 .catalog-filters {
@@ -953,104 +956,6 @@ body.light-mode tr:hover td {
   font-size: 12px;
   line-height: 18px;
   margin-bottom: 16px;
-}
-
-.matrix-layout-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-
-/* Traceability Canvas */
-.dropdown-input {
-  width: 100%;
-  background-color: var(--bg-primary);
-  border: 1px solid var(--border-card);
-  color: var(--text-primary);
-  padding: 10px 14px;
-  border-radius: 6px;
-  outline: none;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.trace-diagram-container {
-  border: 1px dashed var(--border-card);
-  border-radius: 10px;
-  background-color: rgba(0, 0, 0, 0.1);
-  min-height: 320px;
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-}
-
-body.light-mode .trace-diagram-container {
-  background-color: rgba(15, 23, 42, 0.01);
-}
-
-.trace-placeholder {
-  text-align: center;
-  max-width: 320px;
-}
-
-.placeholder-icon {
-  font-size: 40px;
-  margin-bottom: 14px;
-  opacity: 0.5;
-}
-
-.trace-placeholder p {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 18px;
-}
-
-/* Visual Tree Diagram Node Styles */
-.trace-tree {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-}
-
-.tree-node {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-card);
-  border-radius: 8px;
-  padding: 12px;
-  width: 220px;
-  text-align: center;
-  position: relative;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-.node-title {
-  font-weight: 700;
-  font-size: 12px;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.node-desc {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.tree-connector {
-  width: 2px;
-  height: 24px;
-  background-color: var(--border-card);
-}
-
-.tree-children {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  width: 100%;
 }
 
 /* Screen D: Audit Trails Code Viewer */
@@ -1520,4 +1425,506 @@ body.light-mode .code-snippet {
 .auth-card select.form-control:focus {
   border-color: var(--soft-blue);
   background-color: rgba(255, 255, 255, 0.07);
+}
+
+/* ==========================================
+   📠 TALLY-STYLE POS BILLING VOUCHER STYLING
+   ========================================== */
+.tally-voucher-container {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px 180px;
+  gap: 16px;
+  width: 100%;
+  height: calc(100vh - 180px);
+  min-height: 520px;
+}
+
+@media (max-width: 1100px) {
+  .tally-voucher-container {
+    grid-template-columns: minmax(0, 1fr) 240px;
+  }
+  .tally-shortcut-panel {
+    display: none;
+  }
+}
+
+.tally-voucher-sheet {
+  background-color: #0e1726;
+  border: 2px solid #0284c7;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  font-family: 'Consolas', 'Courier New', monospace, sans-serif;
+  color: #38bdf8;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+body.light-mode .tally-voucher-sheet {
+  background-color: #f8fafc;
+  border: 2px solid #0284c7;
+  color: #0369a1;
+}
+
+.tally-voucher-header-bar {
+  background-color: #0369a1;
+  color: #ffffff;
+  padding: 6px 12px;
+  font-weight: bold;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.tally-voucher-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-grow: 1;
+  overflow-y: auto;
+}
+
+.tally-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  border-bottom: 1px dashed #0284c7;
+  padding-bottom: 12px;
+}
+
+body.light-mode .tally-info-grid {
+  border-bottom-color: #cbd5e1;
+}
+
+.tally-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.tally-field label {
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.tally-input {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #1e293b;
+  color: #f8fafc;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  border-radius: 3px;
+  flex-grow: 1;
+}
+
+body.light-mode .tally-input {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+.tally-input:focus {
+  background: #172554 !important;
+  color: #f8fafc !important;
+  border-color: #38bdf8 !important;
+}
+
+body.light-mode .tally-input:focus {
+  background: #f0f9ff !important;
+  color: #0369a1 !important;
+  border-color: #0284c7 !important;
+}
+
+.tally-voucher-table-wrapper {
+  flex-grow: 1;
+  overflow: auto;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.2);
+}
+
+body.light-mode .tally-voucher-table-wrapper {
+  border-color: #cbd5e1;
+  background: #ffffff;
+}
+
+.tally-voucher-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tally-voucher-table th {
+  background-color: #1e293b;
+  color: #38bdf8;
+  font-weight: bold;
+  text-transform: uppercase;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #0284c7;
+  border-right: 1px solid #1e293b;
+}
+
+body.light-mode .tally-voucher-table th {
+  background-color: #f1f5f9;
+  color: #0369a1;
+  border-bottom: 1px solid #cbd5e1;
+  border-right: 1px solid #e2e8f0;
+}
+
+.tally-voucher-table td {
+  padding: 4px 6px;
+  border-bottom: 1px dashed rgba(2, 132, 199, 0.2);
+  border-right: 1px solid rgba(30, 41, 59, 0.4);
+  vertical-align: middle;
+}
+
+body.light-mode .tally-voucher-table td {
+  border-bottom: 1px dashed #e2e8f0;
+  border-right: 1px solid #f1f5f9;
+}
+
+.tally-row-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: inherit;
+  padding: 4px;
+}
+
+.tally-row-input:focus {
+  background: #172554 !important;
+  color: #38bdf8 !important;
+}
+
+body.light-mode .tally-row-input:focus {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+}
+
+.tally-voucher-footer {
+  border-top: 1px solid #0284c7;
+  padding-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+body.light-mode .tally-voucher-footer {
+  border-top-color: #cbd5e1;
+}
+
+.tally-narration-box {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tally-narration-box label {
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.tally-totals-box {
+  min-width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.tally-total-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.tally-grand-total {
+  font-size: 16px;
+  font-weight: bold;
+  border-top: 1px dashed #0284c7;
+  border-bottom: 4px double #0284c7;
+  padding: 4px 0;
+  color: #f8fafc;
+}
+
+body.light-mode .tally-grand-total {
+  border-top-color: #cbd5e1;
+  border-bottom-color: #cbd5e1;
+  color: #0f172a;
+}
+
+/* Sidebar lists: party and items */
+.tally-sidebar-list {
+  background-color: #0e1726;
+  border: 1px solid #0284c7;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+body.light-mode .tally-sidebar-list {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.tally-list-header {
+  background-color: #0369a1;
+  color: #ffffff;
+  padding: 6px 12px;
+  font-weight: bold;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.tally-list-body {
+  overflow-y: auto;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.tally-list-item {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: #94a3b8;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(2, 132, 199, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+body.light-mode .tally-list-item {
+  color: #475569;
+  border-bottom-color: #cbd5e1;
+}
+
+.tally-list-item:hover, .tally-list-item.selected {
+  background-color: #1e293b;
+  color: #38bdf8;
+}
+
+body.light-mode .tally-list-item:hover, body.light-mode .tally-list-item.selected {
+  background-color: #e2e8f0;
+  color: #0284c7;
+}
+
+.tally-list-item.selected {
+  border-left: 4px solid #38bdf8;
+}
+
+body.light-mode .tally-list-item.selected {
+  border-left-color: #0284c7;
+}
+
+/* Shortcuts Panel */
+.tally-shortcut-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tally-shortcut-btn {
+  background-color: #1e293b;
+  border: 1px solid #0284c7;
+  color: #38bdf8;
+  padding: 10px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+body.light-mode .tally-shortcut-btn {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: #0369a1;
+}
+
+.tally-shortcut-btn:hover {
+  background-color: #0369a1;
+  color: #ffffff;
+  border-color: #0369a1;
+}
+
+.tally-key-badge {
+  background: rgba(2, 132, 199, 0.2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+/* Accept confirmation dialog */
+.tally-accept-dialog-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0,0,0,0.6);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.tally-accept-dialog-overlay.active {
+  display: flex !important;
+}
+
+.tally-accept-dialog {
+  background-color: #0e1726;
+  border: 2px solid #0284c7;
+  padding: 16px 24px;
+  border-radius: 4px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-align: center;
+  color: #38bdf8;
+}
+
+body.light-mode .tally-accept-dialog {
+  background-color: #ffffff;
+  border-color: #0284c7;
+  color: #0369a1;
+}
+
+.tally-accept-dialog-title {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+
+.tally-accept-dialog-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.tally-accept-dialog-btn {
+  background: #1e293b;
+  border: 1px solid #0284c7;
+  color: #38bdf8;
+  padding: 4px 16px;
+  cursor: pointer;
+  font-weight: bold;
+  font-family: inherit;
+  border-radius: 3px;
+}
+
+.tally-accept-dialog-btn:hover, .tally-accept-dialog-btn.active {
+  background: #0369a1;
+  color: #ffffff;
+  border-color: #0369a1;
+}
+
+.tally-row-delete-btn {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-weight: bold;
+  padding: 0 4px;
+}
+
+.tally-row-delete-btn:hover {
+  color: #f87171;
+}
+
+.tally-status-select {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  outline: none;
+  cursor: pointer;
+  background-color: transparent;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.tally-status-select:focus {
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.4);
+}
+
+.tally-status-select.status-completed {
+  background-color: var(--mint-green-bg);
+  color: var(--mint-green);
+  border-color: var(--mint-green);
+}
+
+.tally-status-select.status-dispatched {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.tally-status-select.status-pending {
+  background-color: var(--soft-amber-bg);
+  color: var(--soft-amber);
+  border-color: var(--soft-amber);
+}
+
+body.light-mode .tally-status-select.status-completed {
+  background-color: var(--mint-green-bg);
+  color: var(--mint-green);
+  border-color: var(--mint-green);
+}
+
+body.light-mode .tally-status-select.status-dispatched {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border-color: #3b82f6;
+}
+
+body.light-mode .tally-status-select.status-pending {
+  background-color: var(--soft-amber-bg);
+  color: #d97706;
+  border-color: var(--soft-amber);
+}
+
+.tally-status-select.status-unpaid {
+  background-color: var(--pastel-red-bg);
+  color: var(--pastel-red);
+  border-color: var(--pastel-red);
+}
+
+.tally-status-select.status-paid {
+  background-color: var(--mint-green-bg);
+  color: var(--mint-green);
+  border-color: var(--mint-green);
+}
+
+body.light-mode .tally-status-select.status-unpaid {
+  background-color: var(--pastel-red-bg);
+  color: #ef4444;
+  border-color: var(--pastel-red);
+}
+
+body.light-mode .tally-status-select.status-paid {
+  background-color: var(--mint-green-bg);
+  color: var(--mint-green);
+  border-color: var(--mint-green);
 }

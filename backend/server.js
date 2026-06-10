@@ -12,6 +12,9 @@ const port = 3000;
 app.use(cors());
 app.use(express.json());
 
+// Handle favicon
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, '../frontend')));
 
@@ -52,7 +55,7 @@ const authenticateJWT = async (req, res, next) => {
       });
     });
 
-    const role = userRoleRecord ? userRoleRecord.role : 'SALES_AGENT';
+    const role = userRoleRecord ? userRoleRecord.role : 'ADMIN';
     const name = userData.user_metadata?.full_name || userData.email;
 
     req.user = {
@@ -93,7 +96,7 @@ app.post('/api/v1/auth/register-role', async (req, res) => {
     return res.status(400).json({ error: 'Missing required parameters: userId, email, role' });
   }
 
-  if (!['ADMIN', 'INVENTORY_MANAGER', 'PRODUCTION_SUPERVISOR', 'SALES_AGENT'].includes(role)) {
+  if (role !== 'ADMIN') {
     return res.status(400).json({ error: 'Invalid user role' });
   }
 
@@ -225,7 +228,7 @@ app.get('/api/v1/inventory/raw-materials', async (req, res) => {
   try {
     const rawMaterials = await dbAll("SELECT * FROM raw_materials");
     const batches = await dbAll(`
-      SELECT b.*, m.name as material_name, m.unit 
+      SELECT b.*, m.name as material_name, m.unit, m.SKU as SKU 
       FROM inventory_batches b
       JOIN raw_materials m ON b.raw_material_id = m.id
       ORDER BY expiry_date ASC
@@ -238,7 +241,7 @@ app.get('/api/v1/inventory/raw-materials', async (req, res) => {
 
 // POST Add Raw stock with Expiry
 app.post('/api/v1/inventory/raw-materials', async (req, res) => {
-  const { name, SKU, unit, quantity, expiry_date, capacity, safety, user_role, user_name } = req.body;
+  const { name, SKU, unit, quantity, expiry_date, capacity, safety, unit_price, user_role, user_name } = req.body;
   if (!name || !SKU || !unit || quantity === undefined || !expiry_date) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -263,8 +266,8 @@ app.post('/api/v1/inventory/raw-materials', async (req, res) => {
     // 2. Create new inventory batch
     const batchNumber = `BAT-${SKU}-${Date.now().toString().slice(-4)}`;
     const expiryTimestamp = expiry_date.includes(' ') ? expiry_date : `${expiry_date} 00:00:00`;
-    await dbRun(`INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, expiry_date) 
-                 VALUES (?, ?, ?, ?, ?)`, [rawMaterialId, batchNumber, parseFloat(quantity), parseFloat(quantity), expiryTimestamp]);
+    await dbRun(`INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) 
+           VALUES (?, ?, ?, ?, ?, ?)`, [rawMaterialId, batchNumber, parseFloat(quantity), parseFloat(quantity), parseFloat(unit_price || 0.0), expiryTimestamp]);
 
     // 3. Log Audit
     await logAudit(
@@ -354,19 +357,30 @@ app.delete('/api/v1/inventory/batches/:id', async (req, res) => {
 
 // ==========================================
 // 🍦 RECIPES API
-// ==========================================
-
 // GET Recipes
 app.get('/api/v1/recipes', async (req, res) => {
   try {
     const recipes = await dbAll("SELECT * FROM recipes");
-    for (let recipe of recipes) {
-      recipe.ingredients = await dbAll(`
+    if (recipes.length > 0) {
+      const recipeIds = recipes.map(r => r.id);
+      const allIngredients = await dbAll(`
         SELECT ri.*, rm.name, rm.unit 
         FROM recipe_ingredients ri
         JOIN raw_materials rm ON ri.raw_material_id = rm.id
-        WHERE ri.recipe_id = ?
-      `, [recipe.id]);
+        WHERE ri.recipe_id = ANY(?)
+      `, [recipeIds]);
+      
+      const ingredientsMap = {};
+      allIngredients.forEach(ing => {
+        if (!ingredientsMap[ing.recipe_id]) {
+          ingredientsMap[ing.recipe_id] = [];
+        }
+        ingredientsMap[ing.recipe_id].push(ing);
+      });
+      
+      recipes.forEach(recipe => {
+        recipe.ingredients = ingredientsMap[recipe.id] || [];
+      });
     }
     res.json(recipes);
   } catch (err) {
@@ -760,10 +774,23 @@ app.put('/api/v1/finished-goods/:id/price', async (req, res) => {
 
 // GET Orders
 app.get('/api/v1/sales/orders', async (req, res) => {
+  const limit = parseInt(req.query.limit) || 100;
+  const offset = parseInt(req.query.offset) || 0;
   try {
-    const orders = await dbAll("SELECT * FROM orders ORDER BY id DESC");
-    for (let order of orders) {
-      order.items = await dbAll("SELECT * FROM order_items WHERE order_id = ?", [order.id]);
+    const orders = await dbAll("SELECT * FROM orders ORDER BY id DESC LIMIT ? OFFSET ?", [limit, offset]);
+    if (orders.length > 0) {
+      const orderIds = orders.map(o => o.id);
+      const allItems = await dbAll("SELECT * FROM order_items WHERE order_id = ANY(?)", [orderIds]);
+      const itemsMap = {};
+      allItems.forEach(item => {
+        if (!itemsMap[item.order_id]) {
+          itemsMap[item.order_id] = [];
+        }
+        itemsMap[item.order_id].push(item);
+      });
+      orders.forEach(order => {
+        order.items = itemsMap[order.id] || [];
+      });
     }
     res.json(orders);
   } catch (err) {
@@ -774,8 +801,40 @@ app.get('/api/v1/sales/orders', async (req, res) => {
 // GET Distributors
 app.get('/api/v1/distributors', async (req, res) => {
   try {
-    const distributors = await dbAll("SELECT * FROM distributors ORDER BY name ASC");
+    const distributors = await dbAll(`
+      SELECT 
+        d.*,
+        COALESCE((SELECT SUM(o.total_amount) FROM orders o WHERE o.customer_name = d.name), 0) as balance
+      FROM distributors d
+      ORDER BY d.name ASC
+    `);
     res.json(distributors);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET Last Prices for a Customer
+app.get('/api/v1/sales/last-prices', async (req, res) => {
+  const { customer_name } = req.query;
+  if (!customer_name) {
+    return res.status(400).json({ error: "customer_name parameter is required" });
+  }
+  try {
+    const rows = await dbAll(`
+      SELECT DISTINCT ON (product_name) product_name, price
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.customer_name = ?
+      ORDER BY product_name, o.id DESC
+    `, [customer_name]);
+    
+    const pricingMap = {};
+    rows.forEach(row => {
+      pricingMap[row.product_name] = row.price;
+    });
+    
+    res.json(pricingMap);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -783,7 +842,7 @@ app.get('/api/v1/distributors', async (req, res) => {
 
 // POST Add New Distributor
 app.post('/api/v1/distributors', async (req, res) => {
-  const { name, location, user_role, user_name } = req.body;
+  const { name, location, gstin, phone, user_role, user_name } = req.body;
   if (!name) {
     return res.status(400).json({ error: "Distributor name is required" });
   }
@@ -795,8 +854,8 @@ app.post('/api/v1/distributors', async (req, res) => {
     }
 
     const result = await dbRun(
-      "INSERT INTO distributors (name, location) VALUES (?, ?)",
-      [name, location || '']
+      "INSERT INTO distributors (name, location, gstin, phone) VALUES (?, ?, ?, ?)",
+      [name, location || '', gstin || '', phone || '']
     );
     const distributorId = result.lastID;
 
@@ -808,7 +867,7 @@ app.post('/api/v1/distributors', async (req, res) => {
       "distributors",
       distributorId,
       null,
-      { name, location: location || '' }
+      { name, location: location || '', gstin: gstin || '', phone: phone || '' }
     );
 
     broadcast("DISTRIBUTORS_UPDATED", { type: "DISTRIBUTOR_CREATED", name });
@@ -855,7 +914,7 @@ app.put('/api/v1/sales/orders/:id/status', async (req, res) => {
 
 // POST Create Order
 app.post('/api/v1/sales/orders', async (req, res) => {
-  const { customer_name, location, items, user_role, user_name } = req.body;
+  const { customer_name, location, items, include_gst, user_role, user_name } = req.body;
   if (!customer_name || !items || items.length === 0) {
     return res.status(400).json({ error: "customer_name and items are required" });
   }
@@ -886,8 +945,11 @@ app.post('/api/v1/sales/orders', async (req, res) => {
     }
 
     // Calculate tax using dynamic GST setting
-    const gstRateSetting = await dbGet("SELECT value FROM settings WHERE key = 'gst_rate'");
-    const gstRate = gstRateSetting ? parseFloat(gstRateSetting.value) : 0.18;
+    let gstRate = 0;
+    if (include_gst !== false) {
+      const gstRateSetting = await dbGet("SELECT value FROM settings WHERE key = 'gst_rate'");
+      gstRate = gstRateSetting ? parseFloat(gstRateSetting.value) : 0.18;
+    }
     const taxAmt = totalAmt * gstRate;
     const finalAmt = totalAmt + taxAmt;
     const orderCode = `ORD-${Date.now().toString().slice(-6)}`;
@@ -932,7 +994,6 @@ app.post('/api/v1/sales/orders', async (req, res) => {
   }
 });
 
-// GET Bill Invoice HTML
 app.get('/api/v1/sales/orders/:id/invoice', async (req, res) => {
   const { id } = req.params;
   try {
@@ -940,113 +1001,917 @@ app.get('/api/v1/sales/orders/:id/invoice', async (req, res) => {
     if (!order) return res.status(404).send("<h1>Order not found</h1>");
 
     const items = await dbAll("SELECT * FROM order_items WHERE order_id = ?", [id]);
+    const dist = await dbGet("SELECT * FROM distributors WHERE name = ?", [order.customer_name]);
 
-    // Send styled HTML for the invoice so the user can easily view or print it
+    const buyerAddress = (order.customer_location && order.customer_location !== 'null') ? order.customer_location : ((dist && dist.location && dist.location !== 'null') ? dist.location : "N/A");
+    const buyerGstin = (order.customer_gstin && order.customer_gstin !== 'null') ? order.customer_gstin : ((dist && dist.gstin && dist.gstin !== 'null') ? dist.gstin : "N/A");
+    const buyerPhone = (dist && dist.phone && dist.phone !== 'null') ? dist.phone : "N/A";
+
+    const oDate = new Date(order.order_date);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const formattedDate = `${oDate.getDate()}-${months[oDate.getMonth()]}-${oDate.getFullYear().toString().substring(2)}`; // e.g. 1-May-26
+
+    // Helper to format currency in Indian style
+    function formatIndianCurrency(num) {
+      if (num === undefined || num === null || isNaN(num)) return '0.00';
+      return Number(num).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Helper: State from GSTIN
+    function getStateFromGstin(gstin) {
+      if (!gstin || gstin === 'N/A' || gstin.trim().length < 2) {
+        return { name: 'Haryana', code: '06' };
+      }
+      const prefix = gstin.trim().substring(0, 2);
+      const stateMap = {
+        '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
+        '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan',
+        '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh',
+        '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura',
+        '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand',
+        '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat',
+        '26': 'Dadra & Nagar Haveli and Daman & Diu', '27': 'Maharashtra', '29': 'Karnataka',
+        '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala', '33': 'Tamil Nadu',
+        '34': 'Puducherry', '35': 'Andaman & Nicobar Islands', '36': 'Telangana',
+        '37': 'Andhra Pradesh', '38': 'Ladakh'
+      };
+      return {
+        name: stateMap[prefix] || 'Haryana',
+        code: prefix
+      };
+    }
+
+    const buyerState = getStateFromGstin(buyerGstin);
+
+    // Dynamic tax determination
+    const gstinClean = (buyerGstin && buyerGstin !== 'N/A') ? buyerGstin.trim() : '';
+    const isLocal = gstinClean ? gstinClean.startsWith('06') : true; // default to Haryana (local)
+
+    // Calculate subtotal, taxes, and round off
     const subtotal = order.total_amount - order.tax_amount;
-    const gstPercent = (order.gst_rate !== undefined && order.gst_rate !== null) ? (order.gst_rate * 100).toFixed(1).replace('.0', '') : '18';
-    
-    let rowsHtml = '';
-    items.forEach((item, index) => {
-      rowsHtml += `
-        <tr>
-          <td>${index + 1}</td>
-          <td>${item.product_name}</td>
-          <td>₹${item.price.toFixed(2)}</td>
-          <td>${item.quantity}</td>
-          <td>₹${(item.price * item.quantity).toFixed(2)}</td>
+    const cgstVal = isLocal ? order.tax_amount / 2 : 0;
+    const sgstVal = isLocal ? order.tax_amount / 2 : 0;
+    const igstVal = isLocal ? 0 : order.tax_amount;
+    const grandTotalRounded = Math.round(order.total_amount);
+    const roundOffVal = grandTotalRounded - order.total_amount;
+
+    const cgstRate = order.gst_rate > 0 ? `${((order.gst_rate / 2) * 100).toFixed(2).replace('.00', '')}%` : '0%';
+    const sgstRate = order.gst_rate > 0 ? `${((order.gst_rate / 2) * 100).toFixed(2).replace('.00', '')}%` : '0%';
+    const igstRate = order.gst_rate > 0 ? `${(order.gst_rate * 100).toFixed(2).replace('.00', '')}%` : '0%';
+
+    // Helper: Number to Words
+    function numberToWords(num) {
+      const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+      const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+      function g(n) {
+        if (n < 20) return a[n];
+        let digit = n % 10;
+        return b[Math.floor(n / 10)] + (digit ? ' ' + a[digit] : '');
+      }
+
+      function h(n) {
+        if (n === 0) return '';
+        if (n < 100) return g(n);
+        let rem = n % 100;
+        return a[Math.floor(n / 100)] + ' Hundred' + (rem ? ' ' + h(rem) : '');
+      }
+
+      function convert(n) {
+        if (n === 0) return '';
+        let word = '';
+        
+        let crore = Math.floor(n / 10000000);
+        n %= 10000000;
+        if (crore) word += h(crore) + ' Crore ';
+        
+        let lakh = Math.floor(n / 100000);
+        n %= 100000;
+        if (lakh) word += h(lakh) + ' Lakh ';
+        
+        let thousand = Math.floor(n / 1000);
+        n %= 1000;
+        if (thousand) word += h(thousand) + ' Thousand ';
+        
+        if (n) word += h(n);
+        
+        return word.trim();
+      }
+
+      let parts = Number(num).toFixed(2).split('.');
+      let rupees = parseInt(parts[0]);
+      let paise = parseInt(parts[1]);
+
+      let word = convert(rupees);
+      if (paise > 0) {
+        word += ' and ' + convert(paise) + ' paise';
+      }
+      return 'INR ' + word + ' Only';
+    }
+
+    const wordsAmount = numberToWords(grandTotalRounded);
+    const taxWordsAmount = numberToWords(order.tax_amount);
+
+    const isGst = order.tax_amount > 0 && order.gst_rate > 0;
+    if (!isGst) {
+      let rowsHtml = '';
+      let totalQtySum = 0;
+      let lastUnit = 'BOX';
+
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
+        totalQtySum += item.quantity;
+
+        const fg = await dbGet("SELECT unit FROM finished_goods WHERE name = ?", [item.product_name]);
+        const unit = (fg && fg.unit ? fg.unit : "BOX").toUpperCase();
+        lastUnit = unit;
+
+        rowsHtml += `
+          <tr style="vertical-align: top;">
+            <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: center;">${index + 1}</td>
+            <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: left;">
+              <strong>${item.product_name}</strong>
+            </td>
+            <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: center;"></td>
+            <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: right; font-weight: bold; font-family: monospace;">${item.quantity} ${unit}</td>
+            <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(item.price)}</td>
+            <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(item.price)}</td>
+            <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: center;">${unit}</td>
+            <td style="padding: 5px 8px; text-align: right; font-weight: bold; font-family: monospace; border-right: none;">${formatIndianCurrency(item.price * item.quantity)}</td>
+          </tr>
+        `;
+      }
+
+      const fillerHeight = Math.max(120 - (items.length * 20), 40);
+      const minHeightRow = `
+        <tr style="height: ${fillerHeight}px; vertical-align: top;">
+          <td style="border-right: 1px solid #000; padding: 6px;"></td>
+          <td style="border-right: 1px solid #000; padding: 6px;"></td>
+          <td style="border-right: 1px solid #000; padding: 6px;"></td>
+          <td style="border-right: 1px solid #000; padding: 6px;"></td>
+          <td style="border-right: 1px solid #000; padding: 6px;"></td>
+          <td style="border-right: 1px solid #000; padding: 6px;"></td>
+          <td style="border-right: 1px solid #000; padding: 6px;"></td>
+          <td style="padding: 6px;"></td>
         </tr>
       `;
-    });
+
+      const invoiceHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Invoice - ${order.order_code}</title>
+          <style>
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              color: #000;
+              margin: 0;
+              padding: 20px;
+              background: #fff;
+            }
+            .invoice-container {
+              width: 100%;
+              max-width: 800px;
+              margin: auto;
+              border: 1px solid #000;
+              box-sizing: border-box;
+              background: #fff;
+            }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .text-left { text-align: left; }
+            .bold { font-weight: bold; }
+            
+            /* Master 4-column Table Info Grid */
+            .info-table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+            .info-table td {
+              border-bottom: 1px solid #000;
+              border-right: 1px solid #000;
+              padding: 6px 8px;
+              vertical-align: top;
+              font-size: 11px;
+              line-height: 1.4;
+            }
+            /* Items table styling */
+            .items-table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 11px;
+            }
+            .items-table th {
+              border-bottom: 1px solid #000;
+              border-right: 1px solid #000;
+              padding: 6px 8px;
+              text-align: center;
+              font-weight: bold;
+            }
+            .items-table td {
+              border-right: 1px solid #000;
+              padding: 4px 8px;
+            }
+            .items-table tr.total-row td {
+              border-top: 1px solid #000;
+              border-bottom: 1px solid #000;
+              padding: 6px 8px;
+              font-weight: bold;
+            }
+            /* Summary and Bank styling */
+            .summary-title-cell {
+              font-size: 9px;
+              color: #444;
+              display: block;
+              margin-bottom: 3px;
+            }
+            
+            /* Floating buttons only for screen */
+            .screen-actions {
+              max-width: 800px;
+              margin: 0 auto 15px auto;
+              text-align: right;
+            }
+            .btn-print {
+              padding: 6px 12px;
+              background: #007bff;
+              color: #fff;
+              border: none;
+              border-radius: 4px;
+              cursor: pointer;
+              font-weight: bold;
+              font-size: 12px;
+            }
+            
+            @media print {
+              body { padding: 0; }
+              .screen-actions { display: none; }
+              .invoice-container { max-width: 100%; border: 1px solid #000; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="screen-actions">
+            <button class="btn-print" onclick="window.print()">Print Invoice</button>
+          </div>
+
+          <h3 style="text-align: center; margin: 0 0 10px 0; font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">RETAIL BILL / RECEIPT</h3>
+          
+          <div class="invoice-container">
+            <!-- Seller, Buyer, and Meta Grid -->
+            <table class="info-table">
+              <tr>
+                <!-- Row 1, 2, 3 Left: Seller Details -->
+                <td rowspan="3" colspan="2" style="width: 50%;">
+                  <strong style="font-size: 13px;">CFF</strong><br>
+                  PAL WAS MOD BHIWANI<br>
+                  State Name : Haryana, Code : 06<br>
+                  Contact : 9813291533
+                </td>
+                <!-- Row 1 Right: Invoice No. & Dated -->
+                <td style="width: 25%;">
+                  <span class="summary-title-cell">Invoice No.</span>
+                  <strong>${order.order_code}</strong>
+                </td>
+                <td style="width: 25%; border-right: none;">
+                  <span class="summary-title-cell">Dated</span>
+                  <strong>${formattedDate}</strong>
+                </td>
+              </tr>
+              <tr>
+                <!-- Row 2 Right: Delivery Note & Mode of Payment -->
+                <td>
+                  <span class="summary-title-cell">Delivery Note</span>
+                  &nbsp;
+                </td>
+                <td style="border-right: none;">
+                  <span class="summary-title-cell">Mode/Terms of Payment</span>
+                  <strong>${order.payment_status || 'Credit'}</strong>
+                </td>
+              </tr>
+              <tr>
+                <!-- Row 3 Right: Reference No. & Other References -->
+                <td>
+                  <span class="summary-title-cell">Reference No. & Date.</span>
+                  &nbsp;
+                </td>
+                <td style="border-right: none;">
+                  <span class="summary-title-cell">Other References</span>
+                  &nbsp;
+                </td>
+              </tr>
+              <tr>
+                <!-- Row 4, 5, 6, 7 Left: Buyer Details -->
+                <td rowspan="4" colspan="2" style="width: 50%;">
+                  <span class="summary-title-cell">Buyer (Bill to)</span>
+                  <strong style="font-size: 12px; text-transform: uppercase;">${order.customer_name}</strong><br>
+                  ${buyerAddress !== 'N/A' ? buyerAddress + '<br>' : ''}
+                  State Name &nbsp;&nbsp;&nbsp;&nbsp;: <strong>${buyerState.name}, Code : ${buyerState.code}</strong>
+                </td>
+                <!-- Row 4 Right: Buyer's Order No. & Dated -->
+                <td>
+                  <span class="summary-title-cell">Buyer's Order No.</span>
+                  &nbsp;
+                </td>
+                <td style="border-right: none;">
+                  <span class="summary-title-cell">Dated</span>
+                  &nbsp;
+                </td>
+              </tr>
+              <tr>
+                <!-- Row 5 Right: Dispatch Doc No. & Delivery Note Date -->
+                <td>
+                  <span class="summary-title-cell">Dispatch Doc No.</span>
+                  &nbsp;
+                </td>
+                <td style="border-right: none;">
+                  <span class="summary-title-cell">Delivery Note Date</span>
+                  &nbsp;
+                </td>
+              </tr>
+              <tr>
+                <!-- Row 6 Right: Dispatched through & Destination -->
+                <td>
+                  <span class="summary-title-cell">Dispatched through</span>
+                  &nbsp;
+                </td>
+                <td style="border-right: none;">
+                  <span class="summary-title-cell">Destination</span>
+                  &nbsp;
+                </td>
+              </tr>
+              <tr>
+                <!-- Row 7 Right: Terms of Delivery -->
+                <td colspan="2" style="border-right: none;">
+                  <span class="summary-title-cell">Terms of Delivery</span>
+                  &nbsp;
+                </td>
+              </tr>
+            </table>
+            
+            <!-- Items Table (8 columns) -->
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th style="width: 35px; border-bottom: 1px solid #000;">Sl<br>No.</th>
+                  <th style="border-bottom: 1px solid #000;">Description of Goods</th>
+                  <th style="width: 70px; border-bottom: 1px solid #000;">HSN/SAC</th>
+                  <th style="width: 80px; text-align: right; border-bottom: 1px solid #000;">Quantity</th>
+                  <th style="width: 90px; text-align: right; border-bottom: 1px solid #000;">Rate<br>(Ind. of Tax)</th>
+                  <th style="width: 80px; text-align: right; border-bottom: 1px solid #000;">Rate</th>
+                  <th style="width: 50px; text-align: center; border-bottom: 1px solid #000;">per</th>
+                  <th style="width: 120px; text-align: right; border-bottom: 1px solid #000; border-right: none;">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- Dynamic Rows -->
+                ${rowsHtml}
+                
+                <!-- Blank filling row -->
+                ${minHeightRow}
+                
+                <!-- Grand Total Row -->
+                <tr class="total-row">
+                  <td style="border-right: 1px solid #000;"></td>
+                  <td style="text-align: right; padding-right: 15px; border-right: 1px solid #000;">Total</td>
+                  <td style="border-right: 1px solid #000;"></td>
+                  <td style="border-right: 1px solid #000;"></td>
+                  <td style="border-right: 1px solid #000;"></td>
+                  <td style="border-right: 1px solid #000;"></td>
+                  <td style="border-right: 1px solid #000;"></td>
+                  <td style="text-align: right; font-size: 12px; border-right: none;"><strong>₹ ${formatIndianCurrency(grandTotalRounded)}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+            
+            <!-- Amount in Words -->
+            <table class="info-table" style="border-top: none;">
+              <tr>
+                <td style="border-bottom: 1px solid #000; border-right: none; padding: 6px 8px;">
+                  <span class="summary-title-cell">Amount Chargeable (in words)</span>
+                  <strong style="font-size: 11px;">${wordsAmount}</strong>
+                  <span style="float: right; font-style: italic; font-size: 10px; font-weight: bold; margin-top: 2px;">E. & O.E</span>
+                </td>
+              </tr>
+            </table>
+            
+            <!-- Declarations & Signatures -->
+            <table class="info-table" style="border-bottom: none;">
+              <tr>
+                <!-- Left Cell: Declaration -->
+                <td style="width: 50%; border-bottom: none; border-right: 1px solid #000; padding: 6px 8px; vertical-align: top;">
+                  <strong style="text-decoration: underline; font-size: 10px;">Declaration:</strong><br>
+                  We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+                </td>
+                <!-- Right Cell: Signatory -->
+                <td style="width: 50%; border-bottom: none; border-right: none; height: 90px; vertical-align: top; position: relative; padding: 6px 8px;">
+                  <div style="font-size: 9px; font-weight: bold; text-transform: uppercase;">for CFF</div>
+                  <div style="position: absolute; bottom: 8px; right: 8px; text-align: right; font-size: 9px; font-weight: bold;">
+                    <br><br><br>
+                    Authorised Signatory
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+          
+          <!-- Footer Notes -->
+          <div style="text-align: center; font-size: 9px; font-weight: normal; margin-top: 8px; color: #444;">This is a Computer Generated Invoice</div>
+        </body>
+        </html>
+      `;
+      res.setHeader('Content-Type', 'text/html');
+      res.send(invoiceHtml);
+      return;
+    }
+
+    let rowsHtml = '';
+    let totalQtySum = 0;
+    let lastUnit = 'BOX';
+
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      totalQtySum += item.quantity;
+
+      const fg = await dbGet("SELECT unit FROM finished_goods WHERE name = ?", [item.product_name]);
+      const unit = (fg && fg.unit ? fg.unit : "BOX").toUpperCase();
+      lastUnit = unit;
+
+      rowsHtml += `
+        <tr style="vertical-align: top;">
+          <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: center;">${index + 1}</td>
+          <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: left;">
+            <strong>${item.product_name}</strong>
+          </td>
+          <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: center; font-family: monospace;">2105</td>
+          <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: right; font-weight: bold; font-family: monospace;">${item.quantity} ${unit}</td>
+          <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(item.price)}</td>
+          <td style="border-right: 1px solid #000; padding: 5px 8px; text-align: center;">${unit}</td>
+          <td style="padding: 5px 8px; text-align: right; font-weight: bold; font-family: monospace;">${formatIndianCurrency(item.price * item.quantity)}</td>
+        </tr>
+      `;
+    }
+
+    // Dynamic height calculation for the blank filler row so the table occupies a standard space
+    const fillerHeight = Math.max(120 - (items.length * 20), 40);
+    const minHeightRow = `
+      <tr style="height: ${fillerHeight}px; vertical-align: top;">
+        <td style="border-right: 1px solid #000; padding: 6px;"></td>
+        <td style="border-right: 1px solid #000; padding: 6px;"></td>
+        <td style="border-right: 1px solid #000; padding: 6px;"></td>
+        <td style="border-right: 1px solid #000; padding: 6px;"></td>
+        <td style="border-right: 1px solid #000; padding: 6px;"></td>
+        <td style="border-right: 1px solid #000; padding: 6px;"></td>
+        <td style="padding: 6px;"></td>
+      </tr>
+    `;
+
+    // CGST, SGST, IGST, Round-off Rows
+    let taxBreakdownRows = '';
+    if (order.tax_amount > 0) {
+      if (isLocal) {
+        taxBreakdownRows += `
+          <tr style="vertical-align: top;">
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px; text-align: right; font-weight: bold; font-style: italic;">CGST</td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="padding: 4px 8px; text-align: right; font-weight: bold; font-family: monospace;">${formatIndianCurrency(cgstVal)}</td>
+          </tr>
+          <tr style="vertical-align: top;">
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px; text-align: right; font-weight: bold; font-style: italic;">SGST</td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="padding: 4px 8px; text-align: right; font-weight: bold; font-family: monospace;">${formatIndianCurrency(sgstVal)}</td>
+          </tr>
+        `;
+      } else {
+        taxBreakdownRows += `
+          <tr style="vertical-align: top;">
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px; text-align: right; font-weight: bold; font-style: italic;">IGST</td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+            <td style="padding: 4px 8px; text-align: right; font-weight: bold; font-family: monospace;">${formatIndianCurrency(igstVal)}</td>
+          </tr>
+        `;
+      }
+    }
+    
+    // Round-off Row
+    if (Math.abs(roundOffVal) > 0.001) {
+      const formattedRoundOff = roundOffVal < 0 ? `(-) ${formatIndianCurrency(Math.abs(roundOffVal))}` : `(+) ${formatIndianCurrency(roundOffVal)}`;
+      taxBreakdownRows += `
+        <tr style="vertical-align: top;">
+          <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+          <td style="border-right: 1px solid #000; padding: 4px 8px; text-align: left; font-size: 10px;">Less: <i>R/OFF</i></td>
+          <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+          <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+          <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+          <td style="border-right: 1px solid #000; padding: 4px 8px;"></td>
+          <td style="padding: 4px 8px; text-align: right; font-weight: bold; font-family: monospace;">${formattedRoundOff}</td>
+        </tr>
+      `;
+    }
+
+    // Dynamic HSN Summary Columns depending on tax type
+    let hsnSummaryHeaderHtml = '';
+    let hsnSummaryRowHtml = '';
+    if (isLocal) {
+      hsnSummaryHeaderHtml = `
+        <tr>
+          <th rowspan="2" style="border: 1px solid #000; padding: 4px; font-weight: bold;">HSN/SAC</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 4px; text-align: right; font-weight: bold;">Taxable<br>Value</th>
+          <th colspan="2" style="border: 1px solid #000; padding: 4px; font-weight: bold;">Central Tax</th>
+          <th colspan="2" style="border: 1px solid #000; padding: 4px; font-weight: bold;">State Tax</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 4px; text-align: right; font-weight: bold;">Total<br>Tax Amount</th>
+        </tr>
+        <tr>
+          <th style="border: 1px solid #000; padding: 4px; font-weight: bold;">Rate</th>
+          <th style="border: 1px solid #000; padding: 4px; text-align: right; font-weight: bold;">Amount</th>
+          <th style="border: 1px solid #000; padding: 4px; font-weight: bold;">Rate</th>
+          <th style="border: 1px solid #000; padding: 4px; text-align: right; font-weight: bold;">Amount</th>
+        </tr>
+      `;
+      hsnSummaryRowHtml = `
+        <tr>
+          <td style="border: 1px solid #000; padding: 4px 8px; font-family: monospace;">2105</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(subtotal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; font-family: monospace;">${cgstRate}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(cgstVal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; font-family: monospace;">${sgstRate}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(sgstVal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(order.tax_amount)}</td>
+        </tr>
+        <tr style="font-weight: bold;">
+          <td style="border: 1px solid #000; padding: 4px 8px;">Total</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(subtotal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px;"></td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(cgstVal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px;"></td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(sgstVal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(order.tax_amount)}</td>
+        </tr>
+      `;
+    } else {
+      hsnSummaryHeaderHtml = `
+        <tr>
+          <th rowspan="2" style="border: 1px solid #000; padding: 4px; font-weight: bold;">HSN/SAC</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 4px; text-align: right; font-weight: bold;">Taxable<br>Value</th>
+          <th colspan="2" style="border: 1px solid #000; padding: 4px; font-weight: bold;">Integrated Tax</th>
+          <th rowspan="2" style="border: 1px solid #000; padding: 4px; text-align: right; font-weight: bold;">Total<br>Tax Amount</th>
+        </tr>
+        <tr>
+          <th style="border: 1px solid #000; padding: 4px; font-weight: bold;">Rate</th>
+          <th style="border: 1px solid #000; padding: 4px; text-align: right; font-weight: bold;">Amount</th>
+        </tr>
+      `;
+      hsnSummaryRowHtml = `
+        <tr>
+          <td style="border: 1px solid #000; padding: 4px 8px; font-family: monospace;">2105</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(subtotal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; font-family: monospace;">${igstRate}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(igstVal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(order.tax_amount)}</td>
+        </tr>
+        <tr style="font-weight: bold;">
+          <td style="border: 1px solid #000; padding: 4px 8px;">Total</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(subtotal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px;"></td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(igstVal)}</td>
+          <td style="border: 1px solid #000; padding: 4px 8px; text-align: right; font-family: monospace;">${formatIndianCurrency(order.tax_amount)}</td>
+        </tr>
+      `;
+    }
 
     const invoiceHtml = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Stitch ERP Invoice - ${order.order_code}</title>
+        <title>Tax Invoice - ${order.order_code}</title>
         <style>
-          body { font-family: 'Inter', sans-serif; color: #333; margin: 20px; }
-          .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); font-size: 14px; line-height: 24px; }
-          .invoice-header { display: flex; justify-content: space-between; border-bottom: 2px solid #38bdf8; padding-bottom: 20px; margin-bottom: 20px; }
-          .invoice-title { font-size: 28px; font-weight: bold; color: #1e3a8a; }
-          .company-info { text-align: right; font-size: 12px; color: #666; }
-          .details { display: flex; justify-content: space-between; margin-bottom: 30px; }
-          table { width: 100%; border-collapse: collapse; text-align: left; }
-          th { background: #f8fafc; border-bottom: 2px solid #e2e8f0; padding: 10px; font-weight: 600; }
-          td { border-bottom: 1px solid #e2e8f0; padding: 10px; }
-          .totals { margin-top: 30px; float: right; width: 300px; }
-          .totals-row { display: flex; justify-content: space-between; padding: 6px 0; }
-          .grand-total { font-weight: bold; font-size: 18px; border-top: 2px solid #1e3a8a; padding-top: 10px; color: #1e3a8a; }
-          .footer { margin-top: 100px; text-align: center; font-size: 11px; color: #999; border-top: 1px dashed #ccc; padding-top: 10px; }
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            color: #000;
+            margin: 0;
+            padding: 20px;
+            background: #fff;
+          }
+          .invoice-container {
+            width: 100%;
+            max-width: 800px;
+            margin: auto;
+            border: 1px solid #000;
+            box-sizing: border-box;
+            background: #fff;
+          }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .text-left { text-align: left; }
+          .bold { font-weight: bold; }
+          
+          /* Master 4-column Table Info Grid */
+          .info-table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+          .info-table td {
+            border-bottom: 1px solid #000;
+            border-right: 1px solid #000;
+            padding: 6px 8px;
+            vertical-align: top;
+            font-size: 11px;
+            line-height: 1.4;
+          }
+          /* Items table styling */
+          .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+          }
+          .items-table th {
+            border-bottom: 1px solid #000;
+            border-right: 1px solid #000;
+            padding: 6px 8px;
+            text-align: center;
+            font-weight: bold;
+          }
+          .items-table td {
+            border-right: 1px solid #000;
+            padding: 4px 8px;
+          }
+          .items-table tr.total-row td {
+            border-top: 1px solid #000;
+            border-bottom: 1px solid #000;
+            padding: 6px 8px;
+            font-weight: bold;
+          }
+          /* Summary and Bank styling */
+          .summary-title-cell {
+            font-size: 9px;
+            color: #444;
+            display: block;
+            margin-bottom: 3px;
+          }
+          .hsn-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+            text-align: center;
+          }
+          .hsn-summary-table th, .hsn-summary-table td {
+            padding: 4px 6px;
+          }
+          
+          /* Floating buttons only for screen */
+          .screen-actions {
+            max-width: 800px;
+            margin: 0 auto 15px auto;
+            text-align: right;
+          }
+          .btn-print {
+            padding: 6px 12px;
+            background: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+          }
+          
           @media print {
-            body { margin: 0; }
-            .invoice-box { box-shadow: none; border: none; }
+            body { padding: 0; }
+            .screen-actions { display: none; }
+            .invoice-container { max-width: 100%; border: 1px solid #000; }
           }
         </style>
       </head>
       <body>
-        <div class="invoice-box">
-          <div class="invoice-header">
-            <div>
-              <div class="invoice-title">STITCH ERP</div>
-              <div>Ice Cream Manufacturing Solutions</div>
-            </div>
-            <div class="company-info">
-              <strong>Stitch Ice Cream Factory Ltd.</strong><br>
-              Cold Chain Zone 4, Warehouse Ave<br>
-              GSTIN: 29AAAAA1111A1Z1
-            </div>
-          </div>
-          
-          <div class="details">
-            <div>
-              <strong>Billed To:</strong><br>
-              ${order.customer_name}<br>
-              Distributor Account
-            </div>
-            <div style="text-align: right;">
-              <strong>Invoice Number:</strong> ${order.order_code}<br>
-              <strong>Date:</strong> ${order.order_date}<br>
-              <strong>Status:</strong> ${order.status}
-            </div>
-          </div>
+        <div class="screen-actions">
+          <button class="btn-print" onclick="window.print()">Print Invoice</button>
+        </div>
 
-          <table>
+        <h3 style="text-align: center; margin: 0 0 10px 0; font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">TAX INVOICE</h3>
+        
+        <div class="invoice-container">
+          <!-- Seller, Buyer, and Meta Grid -->
+          <table class="info-table">
+            <tr>
+              <!-- Row 1, 2, 3 Left: Seller Details -->
+              <td rowspan="3" colspan="2" style="width: 50%;">
+                <strong style="font-size: 13px;">CHOKHANI FROZEN FOODS PVT. LTD. - (from 1-Apr</strong><br>
+                PALWAS MOD, MEHAM ROAD,<br>
+                NEAR CARRIER PLANET PUBLIC SCHOOL,<br>
+                BHIWANI-127021<br>
+                FSSAI NO. : 10821002000089<br>
+                GSTIN/UIN: 06AAGCC3649G1ZP<br>
+                State Name : Haryana, Code : 06<br>
+                CIN: U15122DL2010PTC208895<br>
+                Contact : 9813210061
+              </td>
+              <!-- Row 1 Right: Invoice No. & Dated -->
+              <td style="width: 25%;">
+                <span class="summary-title-cell">Invoice No.</span>
+                <strong>${order.order_code}</strong>
+              </td>
+              <td style="width: 25%; border-right: none;">
+                <span class="summary-title-cell">Dated</span>
+                <strong>${formattedDate}</strong>
+              </td>
+            </tr>
+            <tr>
+              <!-- Row 2 Right: Delivery Note & Mode of Payment -->
+              <td>
+                <span class="summary-title-cell">Delivery Note</span>
+                &nbsp;
+              </td>
+              <td style="border-right: none;">
+                <span class="summary-title-cell">Mode/Terms of Payment</span>
+                <strong>${order.payment_status || 'Credit'}</strong>
+              </td>
+            </tr>
+            <tr>
+              <!-- Row 3 Right: Reference No. & Other References -->
+              <td>
+                <span class="summary-title-cell">Reference No. & Date</span>
+                &nbsp;
+              </td>
+              <td style="border-right: none;">
+                <span class="summary-title-cell">Other References</span>
+                &nbsp;
+              </td>
+            </tr>
+            <tr>
+              <!-- Row 4, 5, 6, 7 Left: Buyer Details -->
+              <td rowspan="4" colspan="2" style="width: 50%;">
+                <span class="summary-title-cell">Buyer (Bill to)</span>
+                <strong style="font-size: 12px; text-transform: uppercase;">${order.customer_name}</strong><br>
+                ${buyerAddress}<br><br>
+                GSTIN/UIN &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: <strong>${buyerGstin}</strong><!-- GSTIN: ${buyerGstin} --><br>
+                State Name &nbsp;&nbsp;&nbsp;&nbsp;: <strong>${buyerState.name}, Code : ${buyerState.code}</strong>
+              </td>
+              <!-- Row 4 Right: Buyer's Order No. & Dated -->
+              <td>
+                <span class="summary-title-cell">Buyer's Order No.</span>
+                &nbsp;
+              </td>
+              <td style="border-right: none;">
+                <span class="summary-title-cell">Dated</span>
+                &nbsp;
+              </td>
+            </tr>
+            <tr>
+              <!-- Row 5 Right: Dispatch Doc No. & Delivery Note Date -->
+              <td>
+                <span class="summary-title-cell">Dispatch Doc No.</span>
+                &nbsp;
+              </td>
+              <td style="border-right: none;">
+                <span class="summary-title-cell">Delivery Note Date</span>
+                &nbsp;
+              </td>
+            </tr>
+            <tr>
+              <!-- Row 6 Right: Dispatched through & Destination -->
+              <td>
+                <span class="summary-title-cell">Dispatched through</span>
+                &nbsp;
+              </td>
+              <td style="border-right: none;">
+                <span class="summary-title-cell">Destination</span>
+                &nbsp;
+              </td>
+            </tr>
+            <tr>
+              <!-- Row 7 Right: Terms of Delivery -->
+              <td colspan="2" style="border-right: none;">
+                <span class="summary-title-cell">Terms of Delivery</span>
+                &nbsp;
+              </td>
+            </tr>
+          </table>
+          
+          <!-- Items Table -->
+          <table class="items-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Product Description</th>
-                <th>Unit Price</th>
-                <th>Qty</th>
-                <th>Amount</th>
+                <th style="width: 35px; border-bottom: 1px solid #000;">Sl<br>No.</th>
+                <th style="border-bottom: 1px solid #000;">Description of Goods</th>
+                <th style="width: 80px; border-bottom: 1px solid #000;">HSN/SAC</th>
+                <th style="width: 90px; text-align: right; border-bottom: 1px solid #000;">Quantity</th>
+                <th style="width: 80px; text-align: right; border-bottom: 1px solid #000;">Rate</th>
+                <th style="width: 50px; text-align: center; border-bottom: 1px solid #000;">per</th>
+                <th style="width: 120px; text-align: right; border-bottom: 1px solid #000; border-right: none;">Amount</th>
               </tr>
             </thead>
             <tbody>
+              <!-- Dynamic Rows -->
               ${rowsHtml}
+              
+              <!-- Blank filling row to match height of standard Tally invoices -->
+              ${minHeightRow}
+              
+              <!-- Subtotal Line -->
+              <tr style="vertical-align: top;">
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="border-right: 1px solid #000; text-align: right;"></td>
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="text-align: right; font-weight: bold; border-top: 1px solid #000; border-bottom: 1px solid #000; font-family: monospace; border-right: none;">${formatIndianCurrency(subtotal)}</td>
+              </tr>
+              
+              <!-- CGST, SGST, IGST, R/OFF Rows -->
+              ${taxBreakdownRows}
+              
+              <!-- Grand Total Row -->
+              <tr class="total-row">
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="text-align: right; padding-right: 15px;">Total</td>
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="text-align: right; font-weight: bold; font-family: monospace; border-right: 1px solid #000;">${totalQtySum} ${lastUnit}</td>
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="border-right: 1px solid #000;"></td>
+                <td style="text-align: right; font-size: 12px; border-right: none;"><strong>₹ ${formatIndianCurrency(grandTotalRounded)}</strong></td>
+              </tr>
             </tbody>
           </table>
-
-          <div class="totals">
-            <div class="totals-row">
-              <span>Subtotal:</span>
-              <span>₹${subtotal.toFixed(2)}</span>
-            </div>
-            <div class="totals-row">
-              <span>GST / Tax (${gstPercent}%):</span>
-              <span>₹${order.tax_amount.toFixed(2)}</span>
-            </div>
-            <div class="totals-row grand-total">
-              <span>Total Amount:</span>
-              <span>₹${order.total_amount.toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div style="clear: both;"></div>
-
-          <div class="footer">
-            Thank you for your business. This is an electronically generated document. No signature required.
-          </div>
+          
+          <!-- Amount in Words -->
+          <table class="info-table" style="border-top: none;">
+            <tr>
+              <td style="border-bottom: 1px solid #000; border-right: none; padding: 6px 8px;">
+                <span class="summary-title-cell">Amount Chargeable (in words)</span>
+                <strong style="font-size: 11px;">${wordsAmount}</strong>
+                <span style="float: right; font-style: italic; font-size: 10px; font-weight: bold; margin-top: 2px;">E. & O.E</span>
+              </td>
+            </tr>
+          </table>
+          
+          <!-- HSN Summary Table -->
+          <table class="hsn-summary-table">
+            <thead>
+              ${hsnSummaryHeaderHtml}
+            </thead>
+            <tbody>
+              ${hsnSummaryRowHtml}
+            </tbody>
+          </table>
+          
+          <!-- Tax in Words -->
+          <table class="info-table" style="border-top: 1px solid #000; border-bottom: none;">
+            <tr>
+              <td style="border-bottom: 1px solid #000; border-right: none; font-size: 11px; padding: 6px 8px;">
+                Tax Amount (in words) : <strong>${taxWordsAmount}</strong>
+              </td>
+            </tr>
+          </table>
+          
+          <!-- Declarations & Signatures -->
+          <table class="info-table" style="border-bottom: none;">
+            <tr>
+              <!-- Left Cell: PAN and Declaration -->
+              <td rowspan="2" style="width: 50%; border-bottom: none; border-right: 1px solid #000; padding: 6px 8px;">
+                Company's PAN &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: <strong>AAGCC3649G</strong><br><br>
+                <strong style="text-decoration: underline; font-size: 10px;">Declaration:</strong><br>
+                We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+              </td>
+              <!-- Right Top Cell: Bank Details -->
+              <td style="width: 50%; border-bottom: 1px solid #000; border-right: none; padding: 6px 8px;">
+                <strong>Company's Bank Details:</strong><br>
+                A/c Holder's Name: <strong>CHOKHANI FROZEN FOODS PVT. LTD.</strong><br>
+                Bank Name: <strong>HDFC BANK A/C</strong><br>
+                A/c No.: <strong>50200106023370</strong><br>
+                Branch & IFS Code: <strong>BHIWANI & HDFC0000479</strong>
+              </td>
+            </tr>
+            <tr>
+              <!-- Right Bottom Cell: Signatory -->
+              <td style="width: 50%; border-bottom: none; border-right: none; height: 90px; vertical-align: top; position: relative; padding: 6px 8px;">
+                <div style="font-size: 9px; font-weight: bold; text-transform: uppercase;">for CHOKHANI FROZEN FOODS PVT. LTD.</div>
+                <div style="position: absolute; bottom: 8px; right: 8px; text-align: right; font-size: 9px; font-weight: bold;">
+                  <br><br><br>
+                  Authorised Signatory
+                </div>
+              </td>
+            </tr>
+          </table>
         </div>
+        
+        <!-- Footer Notes -->
+        <div style="text-align: center; font-size: 10px; font-weight: bold; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.5px;">SUBJECT TO BHIWANI JURISDICTION</div>
+        <div style="text-align: center; font-size: 9px; font-weight: normal; margin-top: 2px; color: #444;">This is a Computer Generated Invoice</div>
       </body>
       </html>
     `;
@@ -1184,19 +2049,30 @@ app.get('/api/v1/audit-trails', async (req, res) => {
 // GET Full Year Financial Dashboard metrics
 app.get('/api/v1/dashboard/financials/full-year', async (req, res) => {
   try {
-    const orders = await dbAll("SELECT total_amount, tax_amount, order_date FROM orders WHERE status = 'COMPLETED'");
-    
-    // Calculate totals
-    let totalRevenue = 0;
-    let totalTax = 0;
-    let totalOrders = orders.length;
-
-    orders.forEach(order => {
-      totalRevenue += order.total_amount;
-      totalTax += order.tax_amount;
-    });
-
-    const totalProfit = totalRevenue * 0.35; // 35% margin assumption
+    const yearlyStats = await dbGet(`
+      WITH active_years AS (
+        SELECT DISTINCT EXTRACT(YEAR FROM order_date)::int as yr
+        FROM orders
+        WHERE order_date IS NOT NULL
+        ORDER BY yr DESC
+        LIMIT 3
+      ),
+      years_array AS (
+        SELECT array_agg(yr) as yrs FROM (SELECT yr FROM active_years ORDER BY yr ASC) t
+      )
+      SELECT 
+        (SELECT yrs[1] FROM years_array) as y1,
+        (SELECT yrs[2] FROM years_array) as y2,
+        (SELECT yrs[3] FROM years_array) as y3,
+        COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM order_date)::int = (SELECT yrs[1] FROM years_array) THEN total_amount ELSE 0 END), 0) as sales_y1,
+        COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM order_date)::int = (SELECT yrs[2] FROM years_array) THEN total_amount ELSE 0 END), 0) as sales_y2,
+        COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM order_date)::int = (SELECT yrs[3] FROM years_array) THEN total_amount ELSE 0 END), 0) as sales_y3,
+        COALESCE(SUM(total_amount), 0) as total_revenue,
+        COALESCE(SUM(tax_amount), 0) as total_tax,
+        COALESCE(COUNT(id), 0) as total_orders
+      FROM orders
+      WHERE status = 'COMPLETED'
+    `);
 
     // Generate monthly series (last 12 months)
     const now = new Date();
@@ -1208,15 +2084,23 @@ app.get('/api/v1/dashboard/financials/full-year', async (req, res) => {
       monthlySeries.push({ key: monthKey, label: monthLabel, revenue: 0, tax: 0, orderCount: 0 });
     }
 
-    orders.forEach(order => {
-      if (order.order_date) {
-        const key = order.order_date.substring(0, 7); // YYYY-MM
-        const monthItem = monthlySeries.find(m => m.key === key);
-        if (monthItem) {
-          monthItem.revenue += order.total_amount;
-          monthItem.tax += order.tax_amount;
-          monthItem.orderCount++;
-        }
+    const monthlyStats = await dbAll(`
+      SELECT 
+        TO_CHAR(order_date, 'YYYY-MM') as key,
+        COALESCE(SUM(total_amount), 0) as revenue,
+        COALESCE(SUM(tax_amount), 0) as tax,
+        COUNT(id) as order_count
+      FROM orders
+      WHERE status = 'COMPLETED'
+      GROUP BY key
+    `);
+    
+    monthlyStats.forEach(stat => {
+      const item = monthlySeries.find(m => m.key === stat.key);
+      if (item) {
+        item.revenue = parseFloat(stat.revenue);
+        item.tax = parseFloat(stat.tax);
+        item.orderCount = parseInt(stat.order_count);
       }
     });
 
@@ -1230,26 +2114,51 @@ app.get('/api/v1/dashboard/financials/full-year', async (req, res) => {
       LIMIT 5
     `);
 
-    // Compile distributor matrix
-    const distributorMatrix = await dbAll(`
-      SELECT o.customer_name as name, d.location, COUNT(DISTINCT o.id) as orderCount, SUM(o.tax_amount) as totalTax, SUM(o.total_amount) as totalSales, SUM(oi.quantity) as totalQty
+    // Compile distributor yearly comparison using the correct aggregation logic
+    const distributorYearlyComparison = await dbAll(`
+      WITH active_years AS (
+        SELECT DISTINCT EXTRACT(YEAR FROM order_date)::int as yr
+        FROM orders
+        WHERE order_date IS NOT NULL
+        ORDER BY yr DESC
+        LIMIT 3
+      ),
+      years_array AS (
+        SELECT array_agg(yr) as yrs FROM (SELECT yr FROM active_years ORDER BY yr ASC) t
+      )
+      SELECT 
+        o.customer_name as name,
+        d.location,
+        COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM o.order_date)::int = (SELECT yrs[1] FROM years_array) THEN o.total_amount ELSE 0 END), 0) as sales_y1,
+        COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM o.order_date)::int = (SELECT yrs[2] FROM years_array) THEN o.total_amount ELSE 0 END), 0) as sales_y2,
+        COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM o.order_date)::int = (SELECT yrs[3] FROM years_array) THEN o.total_amount ELSE 0 END), 0) as sales_y3
       FROM orders o
-      LEFT JOIN order_items oi ON o.id = oi.order_id
       LEFT JOIN distributors d ON o.customer_name = d.name
-      GROUP BY o.customer_name
-      ORDER BY totalSales DESC
+      GROUP BY o.customer_name, d.location
+      ORDER BY sales_y3 DESC
     `);
 
     res.json({
       summary: {
-        totalRevenue,
-        totalTax,
-        totalProfit,
-        totalOrders
+        totalRevenue: yearlyStats.total_revenue || 0,
+        totalTax: yearlyStats.total_tax || 0,
+        totalProfit: (yearlyStats.total_revenue || 0) * 0.35,
+        totalOrders: parseInt(yearlyStats.total_orders || 0),
+        salesY1: yearlyStats.sales_y1 || 0,
+        salesY2: yearlyStats.sales_y2 || 0,
+        salesY3: yearlyStats.sales_y3 || 0,
+        y1: yearlyStats.y1,
+        y2: yearlyStats.y2,
+        y3: yearlyStats.y3
       },
       monthlySeries,
+      yearlySeries: [
+        yearlyStats.sales_y1 || 0,
+        yearlyStats.sales_y2 || 0,
+        yearlyStats.sales_y3 || 0
+      ],
       topSellers,
-      distributorMatrix
+      distributorYearlyComparison
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1373,6 +2282,709 @@ app.get('/api/v1/dashboard/operations/monthly', async (req, res) => {
       dailyData,
       recipeBreakdown,
       distributorMatrix
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 🛠️ DISTRIBUTOR UPDATES & DELETIONS
+// ==========================================
+
+// PUT Update Distributor
+app.put('/api/v1/distributors/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, location, gstin, phone } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: "Distributor name is required" });
+  }
+  try {
+    const dist = await dbGet("SELECT * FROM distributors WHERE id = ?", [id]);
+    if (!dist) {
+      return res.status(404).json({ error: "Distributor not found" });
+    }
+    await dbRun(
+      "UPDATE distributors SET name = ?, location = ?, gstin = ?, phone = ? WHERE id = ?",
+      [name, location || '', gstin || '', phone || '', id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Distributor Ledger
+app.delete('/api/v1/distributors/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const dist = await dbGet("SELECT * FROM distributors WHERE id = ?", [id]);
+    if (!dist) {
+      return res.status(404).json({ error: "Distributor not found" });
+    }
+    await dbRun("DELETE FROM distributors WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 📦 FINISHED GOODS STOCK ADJUSTMENT
+// ==========================================
+
+// PUT Update Finished Good Stock
+app.put('/api/v1/finished-goods/:id/stock', async (req, res) => {
+  const { id } = req.params;
+  const { stock_qty, user_role, user_name } = req.body;
+  if (stock_qty === undefined || stock_qty < 0) {
+    return res.status(400).json({ error: "stock_qty must be a non-negative integer" });
+  }
+  try {
+    const fg = await dbGet("SELECT * FROM finished_goods WHERE id = ?", [id]);
+    if (!fg) {
+      return res.status(404).json({ error: "Finished good not found" });
+    }
+
+    await dbRun("UPDATE finished_goods SET stock_qty = ? WHERE id = ?", [stock_qty, id]);
+
+    await logAudit(
+      user_role || "ADMIN",
+      user_name || "Manager",
+      "STOCK_ADJUSTMENT",
+      "finished_goods",
+      id,
+      { stock_qty: fg.stock_qty },
+      { stock_qty: stock_qty }
+    );
+
+    broadcast("FINISHED_GOOD_STOCK_UPDATED", { name: fg.name, new_stock: stock_qty });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 🛒 ORDER PAYMENT STATUS
+// ==========================================
+
+// PUT Update Order Payment Status
+app.put('/api/v1/sales/orders/:id/payment', async (req, res) => {
+  const { id } = req.params;
+  const { payment_status } = req.body;
+  if (!payment_status) {
+    return res.status(400).json({ error: "payment_status is required" });
+  }
+  try {
+    const order = await dbGet("SELECT * FROM orders WHERE id = ?", [id]);
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    await dbRun("UPDATE orders SET payment_status = ? WHERE id = ?", [payment_status, id]);
+    
+    await logAudit(
+      "SALES_AGENT",
+      "System Agent",
+      "ORDER_PAYMENT_STATUS_UPDATED",
+      "orders",
+      id,
+      { payment_status: order.payment_status },
+      { payment_status }
+    );
+
+    broadcast("ORDER_UPDATED", { order_id: id, payment_status });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 👷 WORKERS & ATTENDANCE SHIFTS
+// ==========================================
+
+// GET All Workers
+app.get('/api/v1/workers', async (req, res) => {
+  try {
+    const workers = await dbAll("SELECT * FROM workers ORDER BY name ASC");
+    res.json(workers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Register New Worker
+app.post('/api/v1/workers', async (req, res) => {
+  const { name, hourly_rate } = req.body;
+  if (!name || hourly_rate === undefined) {
+    return res.status(400).json({ error: "name and hourly_rate are required" });
+  }
+  try {
+    const result = await dbRun("INSERT INTO workers (name, hourly_rate) VALUES (?, ?)", [name, hourly_rate]);
+    res.json({ success: true, workerId: result.lastID });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Remove Worker
+app.delete('/api/v1/workers/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await dbRun("DELETE FROM workers WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Clock In Worker
+app.post('/api/v1/workers/clock-in', async (req, res) => {
+  const { worker_id } = req.body;
+  if (!worker_id) {
+    return res.status(400).json({ error: "worker_id is required" });
+  }
+  try {
+    const activeShift = await dbGet("SELECT * FROM worker_shifts WHERE worker_id = ? AND time_out IS NULL", [worker_id]);
+    if (activeShift) {
+      return res.status(400).json({ error: "Worker already has an active shift running" });
+    }
+
+    const worker = await dbGet("SELECT hourly_rate FROM workers WHERE id = ?", [worker_id]);
+    if (!worker) {
+      return res.status(404).json({ error: "Worker not found" });
+    }
+
+    const nowStr = new Date().toISOString();
+    const result = await dbRun(
+      "INSERT INTO worker_shifts (worker_id, time_in, hourly_rate, is_paid) VALUES (?, ?, ?, FALSE)",
+      [worker_id, nowStr, worker.hourly_rate]
+    );
+    res.json({ success: true, shiftId: result.lastID });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT Clock Out Worker Shift
+app.put('/api/v1/workers/shifts/:id/clock-out', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const shift = await dbGet("SELECT * FROM worker_shifts WHERE id = ?", [id]);
+    if (!shift) {
+      return res.status(404).json({ error: "Shift not found" });
+    }
+    if (shift.time_out) {
+      return res.status(400).json({ error: "Shift is already clocked out" });
+    }
+
+    const now = new Date();
+    const nowStr = now.toISOString();
+    const timeIn = new Date(shift.time_in);
+    const totalHours = (now - timeIn) / (1000 * 60 * 60);
+    const paymentAmount = totalHours * shift.hourly_rate;
+
+    await dbRun(
+      "UPDATE worker_shifts SET time_out = ?, total_hours = ?, payment_amount = ? WHERE id = ?",
+      [nowStr, totalHours, paymentAmount, id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET Fetch All Shifts Joined With Worker Name
+app.get('/api/v1/workers/shifts', async (req, res) => {
+  try {
+    const shifts = await dbAll(`
+      SELECT ws.*, w.name as worker_name 
+      FROM worker_shifts ws
+      JOIN workers w ON ws.worker_id = w.id
+      ORDER BY ws.time_in DESC
+    `);
+    res.json(shifts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT Toggle Shift Paid Status
+app.put('/api/v1/workers/shifts/:id/paid', async (req, res) => {
+  const { id } = req.params;
+  const { is_paid } = req.body;
+  if (is_paid === undefined) {
+    return res.status(400).json({ error: "is_paid parameter is required" });
+  }
+  try {
+    await dbRun("UPDATE worker_shifts SET is_paid = ? WHERE id = ?", [is_paid, id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Shift Log
+app.delete('/api/v1/workers/shifts/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await dbRun("DELETE FROM worker_shifts WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 🥶 COLD ROOM BRIDGE CALCULATOR
+// ==========================================
+
+// POST Execute Calculator Production
+app.post('/api/v1/production/execute-calculator', async (req, res) => {
+  const { recipe_id, target_quantity, ingredients_override } = req.body;
+  if (!recipe_id || !target_quantity || target_quantity <= 0) {
+    return res.status(400).json({ error: "recipe_id and a positive target_quantity are required" });
+  }
+
+  try {
+    const recipe = await dbGet("SELECT * FROM recipes WHERE id = ?", [recipe_id]);
+    if (!recipe) {
+      return res.status(404).json({ error: "Recipe not found" });
+    }
+
+    const ingredients = await dbAll(`
+      SELECT ri.*, rm.name, rm.current_stock, rm.unit 
+      FROM recipe_ingredients ri
+      JOIN raw_materials rm ON ri.raw_material_id = rm.id
+      WHERE ri.recipe_id = ?
+    `, [recipe_id]);
+
+    const allocations = [];
+    const now = new Date();
+    const nowStr = now.toISOString().replace('T', ' ').substring(0, 19);
+
+    for (let ing of ingredients) {
+      const batches = await dbAll(`
+        SELECT * FROM inventory_batches 
+        WHERE raw_material_id = ? AND remaining_quantity > 0 AND expiry_date >= ?
+        ORDER BY expiry_date ASC
+      `, [ing.raw_material_id, nowStr]);
+
+      const scaleFactor = target_quantity / recipe.yield_quantity;
+      let requiredQty = ing.quantity_required * scaleFactor;
+      if (ingredients_override && Array.isArray(ingredients_override)) {
+        const override = ingredients_override.find(o => o.raw_material_id === ing.raw_material_id);
+        if (override) {
+          requiredQty = parseFloat(override.quantity_used);
+        }
+      }
+      const totalRequired = requiredQty;
+      
+      let availableQty = 0;
+      const materialAllocations = [];
+
+      for (let batch of batches) {
+        if (requiredQty <= 0) break;
+        const take = Math.min(batch.remaining_quantity, requiredQty);
+        requiredQty -= take;
+        availableQty += take;
+        materialAllocations.push({
+          raw_material_id: ing.raw_material_id,
+          inventory_batch_id: batch.id,
+          quantity_used: take,
+          batch_number: batch.batch_number
+        });
+      }
+
+      if (requiredQty > 0) {
+        return res.status(400).json({
+          error: `Insufficient stock under FEFO rules for ingredient '${ing.name}'. Required: ${totalRequired.toFixed(2)} ${ing.unit}, Available: ${availableQty.toFixed(2)} ${ing.unit}`
+        });
+      }
+
+      allocations.push(...materialAllocations);
+    }
+
+    const yy = now.getFullYear().toString().slice(-2);
+    const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const batch_code = `PB-${yy}${mm}-${rand}`;
+    const expiryFinished = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+    const newBatchResult = await dbRun(
+      "INSERT INTO production_batches (batch_code, recipe_id, flavor_name, status, quantity_produced, expiry_date) VALUES (?, ?, ?, ?, ?, ?)",
+      [batch_code, recipe_id, recipe.name, 'COMPLETED', target_quantity, expiryFinished]
+    );
+    const productionBatchId = newBatchResult.lastID;
+
+    for (let alloc of allocations) {
+      const batchObj = await dbGet("SELECT * FROM inventory_batches WHERE id = ?", [alloc.inventory_batch_id]);
+      const newRemaining = batchObj.remaining_quantity - alloc.quantity_used;
+      await dbRun("UPDATE inventory_batches SET remaining_quantity = ? WHERE id = ?", [newRemaining, alloc.inventory_batch_id]);
+
+      const rawMatObj = await dbGet("SELECT * FROM raw_materials WHERE id = ?", [alloc.raw_material_id]);
+      const newRawStock = rawMatObj.current_stock - alloc.quantity_used;
+      await dbRun("UPDATE raw_materials SET current_stock = ? WHERE id = ?", [newRawStock, alloc.raw_material_id]);
+
+      await dbRun(
+        "INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES (?, ?, ?, ?)",
+        [productionBatchId, alloc.raw_material_id, alloc.inventory_batch_id, alloc.quantity_used]
+      );
+    }
+
+    const finishedGood = await dbGet("SELECT * FROM finished_goods WHERE name = ?", [recipe.name]);
+    if (finishedGood) {
+      const newStock = finishedGood.stock_qty + target_quantity;
+      await dbRun("UPDATE finished_goods SET stock_qty = ? WHERE id = ?", [newStock, finishedGood.id]);
+      
+      await logAudit(
+        "PRODUCTION_SUPERVISOR",
+        "System Calculator",
+        "STOCK_ADJUSTMENT",
+        "finished_goods",
+        finishedGood.id,
+        { stock_qty: finishedGood.stock_qty },
+        { stock_qty: newStock }
+      );
+    }
+
+    await logAudit(
+      "PRODUCTION_SUPERVISOR",
+      "System Calculator",
+      "BATCH_CREATED",
+      "production_batches",
+      productionBatchId,
+      null,
+      { batch_code, recipe: recipe.name, status: 'COMPLETED', quantity_produced: target_quantity, ingredients_allocated: allocations.length }
+    );
+
+    broadcast("PRODUCTION_STARTED", { batch_code, flavor_name: recipe.name });
+    if (finishedGood) {
+      broadcast("FINISHED_GOOD_STOCK_UPDATED", { name: recipe.name, new_stock: finishedGood.stock_qty + target_quantity });
+    }
+    
+    res.json({ success: true, productionBatchId, batch_code, flavor_name: recipe.name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Cancel Order and Revert Inventory
+app.delete('/api/v1/sales/orders/:id', async (req, res) => {
+  const { id } = req.params;
+  const { user_role, user_name } = req.body || {};
+  try {
+    const order = await dbGet("SELECT * FROM orders WHERE id = ?", [id]);
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const items = await dbAll("SELECT * FROM order_items WHERE order_id = ?", [id]);
+
+    // Restore finished goods stock
+    for (let item of items) {
+      const fg = await dbGet("SELECT * FROM finished_goods WHERE name = ?", [item.product_name]);
+      if (fg) {
+        const newStock = fg.stock_qty + item.quantity;
+        await dbRun("UPDATE finished_goods SET stock_qty = ? WHERE id = ?", [newStock, fg.id]);
+        broadcast("FINISHED_GOOD_STOCK_UPDATED", { name: fg.name, new_stock: newStock });
+      }
+    }
+
+    // Delete order (cascades to order_items)
+    await dbRun("DELETE FROM orders WHERE id = ?", [id]);
+
+    await logAudit(
+      user_role || "SALES_AGENT",
+      user_name || "Sales Desk",
+      "BILL_CANCELLED",
+      "orders",
+      id,
+      { order_code: order.order_code, status: order.status },
+      { status: 'CANCELLED' }
+    );
+
+    broadcast("ORDER_CANCELLED", { order_id: id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET Distributor Dashboard Analytics
+app.get('/api/v1/dashboard/distributors/:name', async (req, res) => {
+  const { name } = req.params;
+  try {
+    const orders = await dbAll(`
+      SELECT o.* FROM orders o 
+      WHERE o.customer_name = ?
+      ORDER BY o.order_date DESC
+    `, [name]);
+
+    if (orders.length > 0) {
+      const orderIds = orders.map(o => o.id);
+      const allItems = await dbAll("SELECT * FROM order_items WHERE order_id = ANY(?)", [orderIds]);
+      const itemsMap = {};
+      allItems.forEach(item => {
+        if (!itemsMap[item.order_id]) {
+          itemsMap[item.order_id] = [];
+        }
+        itemsMap[item.order_id].push(item);
+      });
+      orders.forEach(order => {
+        order.items = itemsMap[order.id] || [];
+      });
+    }
+
+    const dist = await dbGet("SELECT * FROM distributors WHERE name = ?", [name]);
+
+    let totalRevenue = 0;
+    let totalTax = 0;
+    let totalQty = 0;
+    let totalOrders = orders.length;
+
+    orders.forEach(order => {
+      totalRevenue += order.total_amount;
+      totalTax += order.tax_amount;
+      if (order.items) {
+        order.items.forEach(item => {
+          totalQty += item.quantity;
+        });
+      }
+    });
+
+    const monthlySeriesMap = {};
+    orders.forEach(order => {
+      if (order.order_date) {
+        const d = new Date(order.order_date);
+        const monthKey = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (!monthlySeriesMap[monthKey]) {
+          monthlySeriesMap[monthKey] = { month: monthKey, totalSales: 0, orderCount: 0 };
+        }
+        monthlySeriesMap[monthKey].totalSales += order.total_amount;
+        monthlySeriesMap[monthKey].orderCount += 1;
+      }
+    });
+
+    const monthlySeries = Object.values(monthlySeriesMap).sort((a, b) => a.month.localeCompare(b.month));
+
+    res.json({
+      name,
+      summary: {
+        totalRevenue,
+        totalTax,
+        totalQty,
+        totalOrders
+      },
+      orders,
+      monthlySeries
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET Distributor YoY Comparison Timeline
+app.get('/api/v1/dashboard/distributors/:name/yoy-comparison', async (req, res) => {
+  const { name } = req.params;
+  try {
+    const activeYears = await dbAll(`
+      SELECT DISTINCT EXTRACT(YEAR FROM order_date)::int as yr
+      FROM orders
+      WHERE order_date IS NOT NULL
+      ORDER BY yr DESC
+      LIMIT 2
+    `);
+    
+    const sortedYears = activeYears.map(r => r.yr).sort((a, b) => a - b);
+    const pastYear = sortedYears[0] || (new Date().getFullYear() - 1);
+    const currentYear = sortedYears[1] || new Date().getFullYear();
+
+    const monthlyStats = await dbAll(`
+      SELECT 
+        EXTRACT(MONTH FROM o.order_date)::int as month,
+        COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM o.order_date)::int = ? THEN o.total_amount ELSE 0 END), 0) as sales_past,
+        COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM o.order_date)::int = ? THEN o.total_amount ELSE 0 END), 0) as sales_current
+      FROM orders o
+      WHERE o.customer_name = ?
+      GROUP BY month
+      ORDER BY month ASC
+    `, [pastYear, currentYear, name]);
+
+    const monthlyPast = Array(12).fill(0);
+    const monthlyCurrent = Array(12).fill(0);
+    let totalPast = 0;
+    let totalCurrent = 0;
+
+    monthlyStats.forEach(stat => {
+      const mIdx = stat.month - 1;
+      if (mIdx >= 0 && mIdx < 12) {
+        monthlyPast[mIdx] = parseFloat(stat.sales_past);
+        monthlyCurrent[mIdx] = parseFloat(stat.sales_current);
+        totalPast += parseFloat(stat.sales_past);
+        totalCurrent += parseFloat(stat.sales_current);
+      }
+    });
+
+    res.json({
+      name,
+      pastYear,
+      currentYear,
+      monthlyPast,
+      monthlyCurrent,
+      totalPast,
+      totalCurrent
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET Distributor Statement of Account HTML
+app.get('/api/v1/sales/distributors/:name/invoice-history', async (req, res) => {
+  const { name } = req.params;
+  try {
+    const orders = await dbAll(`
+      SELECT o.* FROM orders o 
+      WHERE o.customer_name = ?
+      ORDER BY o.order_date DESC
+    `, [name]);
+
+    if (orders.length > 0) {
+      const orderIds = orders.map(o => o.id);
+      const allItems = await dbAll("SELECT * FROM order_items WHERE order_id = ANY(?)", [orderIds]);
+      const itemsMap = {};
+      allItems.forEach(item => {
+        if (!itemsMap[item.order_id]) {
+          itemsMap[item.order_id] = [];
+        }
+        itemsMap[item.order_id].push(item);
+      });
+      orders.forEach(order => {
+        order.items = itemsMap[order.id] || [];
+      });
+    }
+
+    const dist = await dbGet("SELECT * FROM distributors WHERE name = ?", [name]);
+
+    let totalRevenue = 0;
+    let totalTax = 0;
+    let totalQty = 0;
+    let totalOrders = orders.length;
+
+    orders.forEach(order => {
+      totalRevenue += order.total_amount;
+      totalTax += order.tax_amount;
+      if (order.items) {
+        order.items.forEach(item => {
+          totalQty += item.quantity;
+        });
+      }
+    });
+
+    let rowsHtml = '';
+    orders.forEach((ord, index) => {
+      let itemsStr = '';
+      if (ord.items) {
+        itemsStr = ord.items.map(item => `${item.product_name} (${item.quantity})`).join(', ');
+      }
+      rowsHtml += `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${ord.order_code}</td>
+          <td>${ord.order_date ? new Date(ord.order_date).toLocaleDateString() : ''}</td>
+          <td>${itemsStr}</td>
+          <td>₹${ord.tax_amount.toFixed(2)}</td>
+          <td>₹${ord.total_amount.toFixed(2)}</td>
+        </tr>
+      `;
+    });
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Distributor Statement - ${name}</title>
+        <style>
+          body { font-family: 'Inter', sans-serif; color: #333; margin: 20px; }
+          .container { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #38bdf8; padding-bottom: 20px; margin-bottom: 20px; }
+          .title { font-size: 24px; font-weight: bold; color: #1e3a8a; }
+          .summary { display: flex; justify-content: space-between; background: #f8fafc; padding: 15px; margin-bottom: 30px; border-radius: 4px; }
+          table { width: 100%; border-collapse: collapse; text-align: left; }
+          th { background: #f1f5f9; padding: 10px; font-weight: 600; border-bottom: 2px solid #cbd5e1; }
+          td { padding: 10px; border-bottom: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div>
+              <div class="title">Distributor Purchase Statement</div>
+              <div>Distributor: <strong>${name}</strong></div>
+              <div>Location: ${dist ? dist.location || 'N/A' : 'N/A'}</div>
+            </div>
+            <div style="text-align: right;">
+              <div>Stitch Ice Cream Factory</div>
+              <div>Statement Generated: ${new Date().toLocaleDateString()}</div>
+            </div>
+          </div>
+
+          <div class="summary">
+            <div><strong>Total Orders:</strong> ${totalOrders}</div>
+            <div><strong>Total Purchased Qty:</strong> ${totalQty} pcs</div>
+            <div><strong>Total Tax Paid:</strong> ₹${totalTax.toFixed(2)}</div>
+            <div><strong>Total Spend:</strong> ₹${totalRevenue.toFixed(2)}</div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Order Code</th>
+                <th>Date</th>
+                <th>Items (Qty)</th>
+                <th>Tax</th>
+                <th>Total Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </body>
+      </html>
+    `;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) {
+    res.status(500).send(`<h1>Error generating statement</h1><p>${err.message}</p>`);
+  }
+});
+
+// GET Production Analytics for a Flavor
+app.get('/api/v1/production/analytics/:name', async (req, res) => {
+  const { name } = req.params;
+  try {
+    const batchesRes = await dbGet("SELECT COUNT(*) as count FROM production_batches WHERE flavor_name = ? AND status = 'COMPLETED'", [name]);
+    const qtyRes = await dbGet("SELECT SUM(quantity_produced) as total FROM production_batches WHERE flavor_name = ? AND status = 'COMPLETED'", [name]);
+    const materials = await dbAll(`
+      SELECT rm.id as raw_material_id, rm.SKU as SKU, rm.name, SUM(bi.quantity_used) as total_used, rm.unit
+      FROM production_batches pb
+      JOIN batch_ingredients bi ON pb.id = bi.production_batch_id
+      JOIN raw_materials rm ON bi.raw_material_id = rm.id
+      WHERE pb.flavor_name = ? AND pb.status = 'COMPLETED'
+      GROUP BY rm.id, rm.SKU, rm.name, rm.unit
+    `, [name]);
+
+    res.json({
+      totalBatches: parseInt(batchesRes ? batchesRes.count : 0) || 0,
+      totalFinishedProductFormed: parseFloat(qtyRes ? qtyRes.total : 0) || 0,
+      actualMaterialsUsed: materials
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
