@@ -27,3 +27,10 @@ Thumbs.db
 *.njsproj
 *.sln
 *.swp
+
+# AI Agents & temporary scripts/data
+.agents/
+skills-lock.json
+*.xlsx
+parse_excel.py
+sales_data.json

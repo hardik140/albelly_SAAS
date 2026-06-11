@@ -62,13 +62,17 @@ const db = {
     let query = translateSql(sql);
     const isInsert = query.trim().toUpperCase().startsWith('INSERT');
     if (isInsert && !query.toUpperCase().includes('RETURNING')) {
-      query += ' RETURNING id';
+      if (query.toLowerCase().includes('into settings')) {
+        query += ' RETURNING key';
+      } else {
+        query += ' RETURNING id';
+      }
     }
     pool.query(query, params, (err, res) => {
       if (err) {
         callback(err);
       } else {
-        const lastID = res.rows && res.rows[0] ? res.rows[0].id : null;
+        const lastID = res.rows && res.rows[0] ? (res.rows[0].id || res.rows[0].key) : null;
         const context = {
           lastID: lastID,
           changes: res.rowCount
@@ -348,8 +352,9 @@ async function seedDatabase() {
       [milkId, "BAT-MILK-EXP", 200, 200, 40.0, formatTime(dateExpired)]);
 
     const dateNearExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 2.5);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+    const ibMilkNearRes = await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id", 
       [milkId, "BAT-MILK-NEAR", 500, 500, 42.0, formatTime(dateNearExpiry)]);
+    const ibMilkNearId = ibMilkNearRes.rows[0].id;
 
     const dateFreshMilk = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 12);
     await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
@@ -357,8 +362,10 @@ async function seedDatabase() {
 
     // Cream batches
     const dateNearCream = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 3.5);
-    await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
+    const ibCreamNearRes = await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id", 
       [creamId, "BAT-CRM-001", 300, 300, 85.0, formatTime(dateNearCream)]);
+    const ibCreamNearId = ibCreamNearRes.rows[0].id;
+
     const dateFreshCream = new Date(now.getTime() + 24 * 60 * 60 * 1000 * 15);
     await client.query("INSERT INTO inventory_batches (raw_material_id, batch_number, quantity_received, remaining_quantity, unit_price, expiry_date) VALUES ($1, $2, $3, $4, $5, $6)", 
       [creamId, "BAT-CRM-002", 380, 380, 80.0, formatTime(dateFreshCream)]);
@@ -406,21 +413,21 @@ async function seedDatabase() {
     const pb1Res = await client.query("INSERT INTO production_batches (batch_code, recipe_id, flavor_name, status, quantity_produced) VALUES ($1, $2, $3, $4, $5) RETURNING id",
       ["PB-26-001", rVanillaId, "Vanilla 1L Brick", "MIXING", 0]);
     const pb1Id = pb1Res.rows[0].id;
-    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb1Id, milkId, 2, 80.0]); // BAT-MILK-NEAR has ID 2
+    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb1Id, milkId, ibMilkNearId, 80.0]);
 
     const agingEnd = new Date(now.getTime() + 6 * 60 * 60 * 1000);
     const pb2Res = await client.query("INSERT INTO production_batches (batch_code, recipe_id, flavor_name, status, aging_end_time, quantity_produced) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
       ["PB-26-002", rVanillaId, "Vanilla 1L Brick", "AGING", formatTime(agingEnd), 0]);
     const pb2Id = pb2Res.rows[0].id;
-    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb2Id, milkId, 2, 80.0]);
-    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb2Id, creamId, 4, 20.0]); // BAT-CRM-001 has ID 4
+    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb2Id, milkId, ibMilkNearId, 80.0]);
+    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb2Id, creamId, ibCreamNearId, 20.0]);
 
     const expiryFinished = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
     const pb3Res = await client.query("INSERT INTO production_batches (batch_code, recipe_id, flavor_name, status, quantity_produced, expiry_date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
       ["PB-26-003", rVanillaId, "Vanilla 1L Brick", "COMPLETED", 100, formatTime(expiryFinished)]);
     const pb3Id = pb3Res.rows[0].id;
-    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb3Id, milkId, 2, 80.0]);
-    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb3Id, creamId, 4, 20.0]);
+    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb3Id, milkId, ibMilkNearId, 80.0]);
+    await client.query("INSERT INTO batch_ingredients (production_batch_id, raw_material_id, inventory_batch_id, quantity_used) VALUES ($1, $2, $3, $4)", [pb3Id, creamId, ibCreamNearId, 20.0]);
 
     // Seed Gate Logs
     const inTime1 = new Date(now.getTime() - 45 * 60 * 1000);
@@ -475,10 +482,17 @@ async function seedHistoricalData() {
   try {
     await client.query('BEGIN');
     const now = new Date();
+    
+    // Fetch recipe IDs dynamically
+    const vanillaRecipe = await client.query("SELECT id FROM recipes WHERE name = 'Vanilla 1L Brick'");
+    const chocoRecipe = await client.query("SELECT id FROM recipes WHERE name = 'Choco Cone 100ml'");
+    const vanillaRecipeId = vanillaRecipe.rows[0] ? vanillaRecipe.rows[0].id : null;
+    const chocoRecipeId = chocoRecipe.rows[0] ? chocoRecipe.rows[0].id : null;
+
     const customers = ["Deluxe Distributors", "Joy Ice Cream Parlour", "Apex Cold Foods", "Creamy Delight Inc", "National Food Service"];
     const products = [
-      { name: "Vanilla 1L Brick", SKU: "FG-VAN-BRICK", price: 5.00, recipeId: 1, yield: 100 },
-      { name: "Choco Cone 100ml", SKU: "FG-CHO-CONE", price: 1.00, recipeId: 2, yield: 500 },
+      { name: "Vanilla 1L Brick", SKU: "FG-VAN-BRICK", price: 5.00, recipeId: vanillaRecipeId, yield: 100 },
+      { name: "Choco Cone 100ml", SKU: "FG-CHO-CONE", price: 1.00, recipeId: chocoRecipeId, yield: 500 },
       { name: "Mango Tub 5L", SKU: "FG-MAN-TUB", price: 22.00, recipeId: null, yield: 10 }
     ];
 

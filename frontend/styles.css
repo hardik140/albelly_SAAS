@@ -1928,3 +1928,151 @@ body.light-mode .tally-status-select.status-paid {
   color: var(--mint-green);
   border-color: var(--mint-green);
 }
+
+/* ==========================================
+   📱 MOBILE RESPONSIVE STYLING
+   ========================================== */
+
+/* Sidebar Overlay */
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 99;
+  display: none;
+}
+
+.sidebar-overlay.active {
+  display: block;
+}
+
+/* Sidebar Toggle Button */
+.sidebar-toggle-btn {
+  display: none;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
+  color: var(--text-primary);
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  font-size: 20px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-smooth);
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--border-card);
+}
+
+/* Mobile Media Queries */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+
+  /* Sidebar responsive styles */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -280px;
+    height: 100vh;
+    width: 280px;
+    z-index: 100;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .sidebar.mobile-open {
+    left: 0;
+  }
+  
+  .sidebar-toggle-btn {
+    display: flex;
+  }
+  
+  .top-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  
+  .top-header h1 {
+    font-size: 18px;
+  }
+  
+  .text-secondary {
+    font-size: 11px;
+  }
+  
+  .main-content {
+    padding: 16px;
+  }
+  
+  .factory-layout-split {
+    grid-template-columns: 1fr !important;
+    gap: 16px;
+  }
+  
+  /* Tally Voucher Responsive CSS */
+  .tally-voucher-container {
+    grid-template-columns: 1fr !important;
+    height: auto;
+    min-height: auto;
+  }
+  
+  .tally-sidebar-list {
+    margin-top: 12px;
+    height: 250px;
+  }
+  
+  .tally-shortcut-panel {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    margin-top: 12px;
+  }
+  
+  .tally-shortcut-btn {
+    flex: 1 1 calc(50% - 8px);
+    font-size: 11px;
+    padding: 8px;
+  }
+  
+  .tally-info-grid {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .tally-totals-box {
+    min-width: 100%;
+    margin-top: 12px;
+  }
+  
+  .tally-voucher-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  /* Modal responsive sizing */
+  .modal-box {
+    width: 95% !important;
+    max-width: 95% !important;
+    padding: 16px;
+    gap: 12px;
+  }
+  
+  .modal-box-large {
+    max-width: 95% !important;
+  }
+  
+  /* general grid columns stack */
+  .metrics-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+}

@@ -47,8 +47,15 @@
           <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Password:</label>
           <input type="password" id="auth-password" class="form-control" placeholder="••••••••" style="margin-top: 4px; margin-bottom: 12px;" required>
         </div>
-        
-
+        <div class="form-group" id="group-role" style="display: none;">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Access Role:</label>
+          <select id="auth-role" class="form-control" style="margin-top: 4px; margin-bottom: 12px; width: 100%; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-card); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
+            <option value="ADMIN">Admin / Owner</option>
+            <option value="INVENTORY_MANAGER">Inventory Manager</option>
+            <option value="PRODUCTION_SUPERVISOR">Production Supervisor</option>
+            <option value="SALES_AGENT">Sales & Dispatch Agent</option>
+          </select>
+        </div>
         
         <button type="submit" class="btn btn-primary" id="btn-auth-submit" style="width: 100%; padding: 10px; margin-top: 12px; font-weight: 600; font-size: 13px;">Sign In</button>
       </form>
@@ -73,7 +80,7 @@
       </div>
       
       <nav class="nav-links">
-        <button class="nav-btn active" data-screen="sales-desk">
+        <button class="nav-btn active" id="nav-sales-desk" data-screen="sales-desk">
           <span class="btn-icon">💰</span> Sales & Billing POS
         </button>
         <button class="nav-btn" id="nav-financial-full-year" data-screen="financial-full-year">
@@ -111,6 +118,16 @@
           <button class="btn btn-secondary" id="btn-auth-logout" style="width: 100%; margin-top: 8px; font-size: 10px; padding: 4px 8px; height: auto; border: 1px solid var(--border-card); background: rgba(255,255,255,0.03);">Logout Securely</button>
         </div>
         
+        <div class="role-selector-container" id="role-select-box" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-card); display: none;">
+          <label for="role-select">Active Role:</label>
+          <select id="role-select" class="role-dropdown" style="width: 100%; padding: 6px 10px; font-weight: 600; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-card); border-radius: 6px; font-size: 12px; margin-top: 4px;">
+            <option value="ADMIN">Admin / Owner (Full Access)</option>
+            <option value="INVENTORY_MANAGER">Inventory Manager</option>
+            <option value="PRODUCTION_SUPERVISOR">Production Supervisor</option>
+            <option value="SALES_AGENT">Sales & Dispatch Agent</option>
+          </select>
+        </div>
+
         <div class="role-selector-container" id="gst-setting-container" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-card);">
           <label for="gst-rate-input">GST Configuration (%):</label>
           <div style="display: flex; gap: 8px; margin-top: 4px;">
@@ -128,9 +145,12 @@
     <main class="main-content">
       <!-- HEADER -->
       <header class="top-header">
-        <div class="header-left">
-          <h1 id="screen-title">Interactive Sales & Billing Desk</h1>
-          <p id="screen-subtitle" class="text-secondary">Distributor order book POS and dispatch queuing</p>
+        <div class="header-left" style="display: flex; align-items: center; gap: 14px;">
+          <button id="sidebar-toggle" class="sidebar-toggle-btn" style="display: none;">☰</button>
+          <div>
+            <h1 id="screen-title">Interactive Sales & Billing Desk</h1>
+            <p id="screen-subtitle" class="text-secondary">Distributor order book POS and dispatch queuing</p>
+          </div>
         </div>
         <div class="header-right">
           <div class="theme-toggle-btn" id="theme-toggle">

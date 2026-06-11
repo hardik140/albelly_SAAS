@@ -1,0 +1,10 @@
+{
+  "name": "albelly-erp-saas",
+  "version": "1.0.0",
+  "description": "Albelly ERP SaaS - Monorepo root",
+  "scripts": {
+    "install-backend": "cd backend && npm install",
+    "build": "npm run install-backend",
+    "start": "cd backend && node server.js"
+  }
+}

@@ -44,7 +44,22 @@ let charts = {
   distributorYoYTimeline: null
 };
 
-const wsUrl = `ws://${window.location.host}`;
+// ==========================================
+// 🌐 BACKEND CONFIGURATION
+// ==========================================
+// For local development, this defaults to relative paths (empty string).
+// In production, update this with your actual Render URL (e.g. 'https://albelly-backend.onrender.com') without trailing slash.
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? ''
+  : 'https://albelly-backend.onrender.com'; // Replace with your actual Render URL
+
+let wsUrl;
+if (BACKEND_URL) {
+  wsUrl = BACKEND_URL.replace(/^http/, 'ws');
+} else {
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  wsUrl = `${wsProtocol}//${window.location.host}`;
+}
 let ws;
 
 // ==========================================
@@ -98,6 +113,7 @@ const invoiceFrame = document.getElementById('invoice-frame');
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
   setupAuth();
+  setupMobileSidebar();
   setupNavigation();
   setupRoleManager();
   applyRoleRestrictions();
@@ -215,14 +231,16 @@ function setupWS() {
 // 📥 API REQUEST HANDLERS
 // ==========================================
 async function apiGet(path) {
-  const res = await fetch(path, {
+  const url = path.startsWith('/') ? `${BACKEND_URL}${path}` : path;
+  const res = await fetch(url, {
     headers: getRequestHeaders()
   });
   return await res.json();
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(path, {
+  const url = path.startsWith('/') ? `${BACKEND_URL}${path}` : path;
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
     body: JSON.stringify({ ...body, user_role: state.activeRole, user_name: userDisplayName.textContent })
@@ -235,7 +253,8 @@ async function apiPost(path, body) {
 }
 
 async function apiPut(path, body) {
-  const res = await fetch(path, {
+  const url = path.startsWith('/') ? `${BACKEND_URL}${path}` : path;
+  const res = await fetch(url, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
     body: JSON.stringify({ ...body, user_role: state.activeRole, user_name: userDisplayName.textContent })
@@ -248,7 +267,8 @@ async function apiPut(path, body) {
 }
 
 async function apiDelete(path) {
-  const res = await fetch(path, {
+  const url = path.startsWith('/') ? `${BACKEND_URL}${path}` : path;
+  const res = await fetch(url, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
     body: JSON.stringify({ user_role: state.activeRole, user_name: userDisplayName.textContent })
@@ -324,7 +344,7 @@ async function loadWorkerShifts() {
 // 🛠️ NAVIGATION & ACCESS CONTROL (RBAC)
 // ==========================================
 window.viewOrderInvoice = function(orderId) {
-  invoiceFrame.src = `/api/v1/sales/orders/${orderId}/invoice`;
+  invoiceFrame.src = BACKEND_URL ? `${BACKEND_URL}/api/v1/sales/orders/${orderId}/invoice` : `/api/v1/sales/orders/${orderId}/invoice`;
   openModal('modal-invoice-viewer');
 };
 
@@ -413,6 +433,7 @@ function switchScreen(screenId) {
 }
 
 function applyRoleRestrictions() {
+  const salesBtn = document.getElementById('nav-sales-desk');
   const auditsBtn = document.getElementById('nav-audits');
   const finFullBtn = document.getElementById('nav-financial-full-year');
   const monthlyBtn = document.getElementById('nav-monthly-dashboard');
@@ -423,25 +444,122 @@ function applyRoleRestrictions() {
   const distBtn = document.getElementById('nav-distributors');
   const gstSetting = document.getElementById('gst-setting-container');
   
-  if (auditsBtn) auditsBtn.style.display = 'block';
-  if (finFullBtn) finFullBtn.style.display = 'block';
-  if (monthlyBtn) monthlyBtn.style.display = 'block';
-  if (rawBtn) rawBtn.style.display = 'block';
-  if (coldBtn) coldBtn.style.display = 'block';
-  if (bridgeBtn) bridgeBtn.style.display = 'block';
-  if (workersBtn) workersBtn.style.display = 'block';
-  if (distBtn) distBtn.style.display = 'block';
-  if (gstSetting) gstSetting.style.display = 'block';
+  const role = state.activeRole || 'ADMIN';
+
+  // 1. Hide/Show Nav Buttons based on user role module access
+  if (salesBtn) salesBtn.style.display = (role === 'ADMIN' || role === 'SALES_AGENT') ? 'block' : 'none';
+  if (finFullBtn) finFullBtn.style.display = (role === 'ADMIN') ? 'block' : 'none';
+  if (monthlyBtn) monthlyBtn.style.display = (role === 'ADMIN') ? 'block' : 'none';
+  if (rawBtn) rawBtn.style.display = (role === 'ADMIN' || role === 'INVENTORY_MANAGER') ? 'block' : 'none';
+  if (coldBtn) coldBtn.style.display = (role === 'ADMIN' || role === 'INVENTORY_MANAGER') ? 'block' : 'none';
+  if (bridgeBtn) bridgeBtn.style.display = (role === 'ADMIN' || role === 'PRODUCTION_SUPERVISOR') ? 'block' : 'none';
+  if (workersBtn) workersBtn.style.display = (role === 'ADMIN' || role === 'PRODUCTION_SUPERVISOR') ? 'block' : 'none';
+  if (distBtn) distBtn.style.display = (role === 'ADMIN' || role === 'SALES_AGENT' || role === 'INVENTORY_MANAGER') ? 'block' : 'none';
+  if (auditsBtn) auditsBtn.style.display = (role === 'ADMIN') ? 'block' : 'none';
+  if (gstSetting) gstSetting.style.display = (role === 'ADMIN') ? 'block' : 'none';
+
+  // 2. Fallback active screen if current screen is restricted
+  const allowedScreens = [];
+  if (role === 'ADMIN') {
+    allowedScreens.push('sales-desk', 'financial-full-year', 'monthly-dashboard', 'raw-materials', 'cold-room', 'product-bridge', 'workers', 'distributors', 'audit-logs');
+  } else if (role === 'INVENTORY_MANAGER') {
+    allowedScreens.push('raw-materials', 'cold-room', 'distributors');
+  } else if (role === 'PRODUCTION_SUPERVISOR') {
+    allowedScreens.push('product-bridge', 'workers');
+  } else if (role === 'SALES_AGENT') {
+    allowedScreens.push('sales-desk', 'distributors');
+  }
+
+  if (!allowedScreens.includes(state.activeScreen)) {
+    const fallback = allowedScreens[0] || 'sales-desk';
+    switchScreen(fallback);
+  }
 }
 
 function setupRoleManager() {
-  state.activeRole = 'ADMIN';
-  userDisplayName.textContent = 'System Admin';
+  const roleSelect = document.getElementById('role-select');
+  if (roleSelect) {
+    // Sync UI dropdown to actual active role
+    roleSelect.value = state.activeRole || 'ADMIN';
+
+    // Add change event listener for dynamic role switching in mock/testing bypass mode
+    roleSelect.addEventListener('change', (e) => {
+      const selectedRole = e.target.value;
+      state.activeRole = selectedRole;
+      
+      // Update local storage bypass role if previously set
+      const bypassUser = localStorage.getItem('bypass_user');
+      if (bypassUser) {
+        const u = JSON.parse(bypassUser);
+        u.role = selectedRole;
+        localStorage.setItem('bypass_user', JSON.stringify(u));
+      }
+
+      // Update mock user display name
+      let mockUser = 'System Admin';
+      if (selectedRole === 'INVENTORY_MANAGER') mockUser = 'Vikram (Inv Mgr)';
+      else if (selectedRole === 'PRODUCTION_SUPERVISOR') mockUser = 'Rajesh (Prod Supv)';
+      else if (selectedRole === 'SALES_AGENT') mockUser = 'Priya (Sales Desk)';
+      userDisplayName.textContent = mockUser;
+
+      applyRoleRestrictions();
+      renderAll();
+    });
+  }
 }
 
 // Check role permissions for interactive actions
 function hasPermission(action) {
-  return true; // Everyone is ADMIN and has full permission
+  const role = state.activeRole || 'ADMIN';
+  if (role === 'ADMIN') return true;
+
+  if (action === 'ADD_INVENTORY') {
+    return role === 'INVENTORY_MANAGER';
+  }
+  if (action === 'EDIT_DISTRIBUTOR') {
+    return role === 'SALES_AGENT' || role === 'INVENTORY_MANAGER';
+  }
+  if (action === 'TRANSITION_PRODUCTION') {
+    return role === 'PRODUCTION_SUPERVISOR';
+  }
+  if (action === 'CREATE_ORDER') {
+    return role === 'SALES_AGENT';
+  }
+
+  return false;
+}
+
+// ==========================================
+// 📱 MOBILE SIDEBAR SYSTEM
+// ==========================================
+function setupMobileSidebar() {
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebarToggle || !sidebar) return;
+
+  let overlay = document.querySelector('.sidebar-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'sidebar-overlay';
+    document.body.appendChild(overlay);
+  }
+
+  sidebarToggle.addEventListener('click', () => {
+    sidebar.classList.toggle('mobile-open');
+    overlay.classList.toggle('active');
+  });
+
+  overlay.addEventListener('click', () => {
+    sidebar.classList.remove('mobile-open');
+    overlay.classList.remove('active');
+  });
+
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      sidebar.classList.remove('mobile-open');
+      overlay.classList.remove('active');
+    });
+  });
 }
 
 // ==========================================
@@ -704,7 +822,7 @@ window.viewPosInvoice = function(orderId) {
   const invoiceFrame = document.getElementById('invoice-frame');
   if (invoiceFrame) {
     state.activeInvoiceOrderId = orderId;
-    invoiceFrame.src = `/api/v1/sales/orders/${orderId}/invoice`;
+    invoiceFrame.src = BACKEND_URL ? `${BACKEND_URL}/api/v1/sales/orders/${orderId}/invoice` : `/api/v1/sales/orders/${orderId}/invoice`;
     const btnClose = document.getElementById('btn-modal-close-invoice');
     if (btnClose) btnClose.style.display = 'block';
     openModal('modal-invoice-viewer');
@@ -1042,10 +1160,13 @@ window.selectTallyHelperItem = function(index) {
       state.tallyVoucher.activeCell = 'qty';
       updateTallyHelperList();
 
-      // Focus on Qty input of current row
+      // Focus on Qty input of current row and select content
       setTimeout(() => {
         const qtyInput = document.querySelector(`.tally-item-qty[data-index="${rowIndex}"]`);
-        if (qtyInput) qtyInput.focus();
+        if (qtyInput) {
+          qtyInput.focus();
+          qtyInput.select();
+        }
       }, 10);
     }
   }
@@ -1277,6 +1398,14 @@ function resolveTallyPartyName() {
 
       renderTallyTableRows();
       recalcTallyVoucherTotals();
+
+      // Focus on first row's item-name input after rendering to prevent losing focus
+      setTimeout(() => {
+        const firstRowInput = document.querySelector('.tally-item-name[data-index="0"]');
+        if (firstRowInput) {
+          firstRowInput.focus();
+        }
+      }, 50);
     });
   }
 }
@@ -1334,7 +1463,19 @@ function attachTallyRowEventListeners() {
             const narrationInput = document.getElementById('tally-narration-input');
             if (narrationInput) narrationInput.focus();
           } else {
-            selectTallyHelperItem(state.tallyVoucher.helperSelectedIndex);
+            const list = state.tallyVoucher.helperList;
+            if (list && list.length > 0) {
+              selectTallyHelperItem(state.tallyVoucher.helperSelectedIndex);
+            } else {
+              resolveTallyItemByName(idx);
+              setTimeout(() => {
+                const qtyInput = document.querySelector(`.tally-item-qty[data-index="${idx}"]`);
+                if (qtyInput) {
+                  qtyInput.focus();
+                  qtyInput.select();
+                }
+              }, 50);
+            }
           }
         });
       }
@@ -1428,7 +1569,10 @@ function attachTallyRowEventListeners() {
         recalcTallyVoucherTotals();
 
         const rateInput = document.querySelector(`.tally-item-rate[data-index="${idx}"]`);
-        if (rateInput) rateInput.focus();
+        if (rateInput) {
+          rateInput.focus();
+          rateInput.select();
+        }
       }
     };
   });
@@ -1744,7 +1888,7 @@ async function processTallyCheckout(autoPrint = false) {
     }
 
     state.activeInvoiceOrderId = result.orderId;
-    invoiceFrame.src = `/api/v1/sales/orders/${result.orderId}/invoice`;
+    invoiceFrame.src = BACKEND_URL ? `${BACKEND_URL}/api/v1/sales/orders/${result.orderId}/invoice` : `/api/v1/sales/orders/${result.orderId}/invoice`;
     const btnClose = document.getElementById('btn-modal-close-invoice');
     if (btnClose) btnClose.style.display = 'none';
     openModal('modal-invoice-viewer');
@@ -2272,7 +2416,7 @@ window.viewDistributorDetails = async function(name) {
     const printBtn = document.getElementById('btn-print-distributor-history');
     if (printBtn) {
       printBtn.onclick = () => {
-        const printWindow = window.open(`/api/v1/sales/distributors/${encodeURIComponent(data.name)}/invoice-history`, '_blank');
+        const printWindow = window.open(BACKEND_URL ? `${BACKEND_URL}/api/v1/sales/distributors/${encodeURIComponent(data.name)}/invoice-history` : `/api/v1/sales/distributors/${encodeURIComponent(data.name)}/invoice-history`, '_blank');
         if (printWindow) printWindow.focus();
       };
     }
@@ -4001,17 +4145,20 @@ async function setupAuth() {
   }
 
   // Check for existing session on page load
+  let sessionRecovered = false;
   if (!isAuthBypass && supabaseClient) {
     try {
       const { data: { session }, error } = await supabaseClient.auth.getSession();
       if (session) {
         handleSuccessfulLogin(session.user, session.access_token);
-        return;
+        sessionRecovered = true;
       }
     } catch (e) {
       console.error("Session check failed, falling back to login:", e);
     }
-  } else {
+  }
+
+  if (!sessionRecovered) {
     // Check if user previously logged in via bypass mode
     const bypassUser = localStorage.getItem('bypass_user');
     if (bypassUser) {
@@ -4019,6 +4166,8 @@ async function setupAuth() {
       handleBypassLogin(u.email, u.role);
       return;
     }
+  } else {
+    return;
   }
 
   // Show auth modal overlay if no active session
@@ -4057,11 +4206,10 @@ async function setupAuth() {
     const email = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value.trim();
     const fullname = document.getElementById('auth-fullname') ? document.getElementById('auth-fullname').value.trim() : '';
-    const role = 'ADMIN';
+    const role = document.getElementById('auth-role') ? document.getElementById('auth-role').value : 'ADMIN';
 
     if (isAuthBypass) {
-      const mockRole = 'ADMIN';
-      handleBypassLogin(email, mockRole);
+      handleBypassLogin(email, role);
       return;
     }
 
@@ -4082,7 +4230,7 @@ async function setupAuth() {
         
         if (data.user) {
           // Register the user's role in the database via backend
-          const regRes = await fetch('/api/v1/auth/register-role', {
+          const regRes = await fetch(`${BACKEND_URL}/api/v1/auth/register-role`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: data.user.id, email: data.user.email, role })
@@ -4139,7 +4287,7 @@ async function setupAuth() {
     
     try {
       // Query backend for role details
-      const meRes = await fetch('/api/v1/auth/me', {
+      const meRes = await fetch(`${BACKEND_URL}/api/v1/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -4175,17 +4323,17 @@ async function setupAuth() {
 
   function handleBypassLogin(email, role) {
     state.accessToken = null;
-    state.activeRole = 'ADMIN';
+    state.activeRole = role;
     userDisplayName.textContent = email.split('@')[0];
-    localStorage.setItem('bypass_user', JSON.stringify({ email, role: 'ADMIN' }));
+    localStorage.setItem('bypass_user', JSON.stringify({ email, role }));
 
     if (roleSelect) {
-      roleSelect.value = 'ADMIN';
+      roleSelect.value = role;
     }
 
     authUserEmail.textContent = email;
     authUserInfo.style.display = 'block';
-    if (roleSelectBox) roleSelectBox.style.display = 'none';
+    if (roleSelectBox) roleSelectBox.style.display = 'block';
 
     authContainer.classList.remove('active');
     applyRoleRestrictions();

@@ -7,7 +7,7 @@ const path = require('path');
 const { db, initDb, logAudit } = require('./database');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -96,7 +96,8 @@ app.post('/api/v1/auth/register-role', async (req, res) => {
     return res.status(400).json({ error: 'Missing required parameters: userId, email, role' });
   }
 
-  if (role !== 'ADMIN') {
+  const validRoles = ['ADMIN', 'INVENTORY_MANAGER', 'PRODUCTION_SUPERVISOR', 'SALES_AGENT'];
+  if (!validRoles.includes(role)) {
     return res.status(400).json({ error: 'Invalid user role' });
   }
 
