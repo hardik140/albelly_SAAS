@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "Backend API for Albelly ERP & Manufacturing Dashboard",
   "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test:integration": "node comprehensive_test.js",
+    "test:connection": "node test_supabase_connection.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",

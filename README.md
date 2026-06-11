@@ -256,3 +256,6 @@ The Albelly ERP has been tuned to handle heavy historical data loads (1000+ orde
    ```bash
    node comprehensive_test.js
    ```
+
+### Deployment
+For managed hosting deployment instructions, see `/home/runner/work/albelly_ERP/albelly_ERP/hardik140/albelly_ERP/DEPLOYMENT.md`.
